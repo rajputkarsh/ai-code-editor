@@ -26,21 +26,20 @@ export function EditorStateProvider({ children }: { children: React.ReactNode })
     const [activeSecondaryTabId, setActiveSecondaryTabId] = useState<string | null>(null);
     const [isSplit, setIsSplit] = useState(false);
 
+    // Correct implementation of openFile using synchronous updates
     const openFile = useCallback((fileId: string) => {
-        setTabs((prev) => {
-            const existingTab = prev.find((t) => t.fileId === fileId);
-            if (existingTab) {
-                // If split, open in the pane that has focus (simplified: default to primary for now or strict active)
-                // For simplicity: Always focus primary if not specified
-                setActiveTabId(existingTab.id);
-                return prev;
-            }
+        // Check existing tabs synchronously from current state
+        const existingTab = tabs.find((t) => t.fileId === fileId);
 
-            const newTab: EditorTab = { id: crypto.randomUUID(), fileId };
-            setActiveTabId(newTab.id);
-            return [...prev, newTab];
-        });
-    }, []);
+        if (existingTab) {
+            setActiveTabId(existingTab.id);
+            return;
+        }
+
+        const newTab: EditorTab = { id: crypto.randomUUID(), fileId };
+        setTabs(prev => [...prev, newTab]);
+        setActiveTabId(newTab.id);
+    }, [tabs]);
 
     const closeTab = useCallback((tabId: string) => {
         setTabs((prev) => {
