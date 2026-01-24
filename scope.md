@@ -370,4 +370,164 @@ It is an **AI-native development environment** where:
 
 ---
 
+# PHASE 7: Productization, Authentication & Monetization
+
+### Goal
+Convert the editor from a **developer tool** into a **secure, monetizable product** without impacting core editor, AI, or agent architecture.
+
+This phase is intentionally **last** to ensure:
+- Core value is proven before monetization
+- Authentication does not pollute editor logic
+- Billing logic remains isolated and replaceable
+
+---
+
+## 7.1 Public Homepage (Marketing Layer)
+
+### Scope
+- Public landing page at `/`
+- No authentication required
+
+### Features
+- Hero section with clear value proposition
+- High-level feature highlights:
+  - AI-powered code editor
+  - Agent-based development
+  - GitHub integration
+- Pricing teaser (no checkout)
+- Primary CTAs:
+  - “Sign in”
+  - “Start coding”
+
+### Technical Notes
+- Built using Next.js Server Components
+- SEO-optimized metadata
+- Minimal styling (no design system yet)
+
+---
+
+## 7.2 Authentication & Access Control
+
+### Authentication Strategy
+- OAuth-first (GitHub)
+- Email-based authentication (optional, later)
+
+### Scope
+- User sign-in / sign-up
+- Session management
+- User identity persistence
+
+### Route Protection Rules
+
+| Route | Access Level |
+|---|---|
+| `/` | Public |
+| `/editor` | Authenticated users only |
+| `/api/*` | Authenticated (except webhooks) |
+
+### Technical Notes
+- Middleware-based route protection
+- Centralized auth logic
+- Editor remains auth-agnostic internally
+
+---
+
+## 7.3 Subscription & Billing
+
+### Subscription Tiers (Initial)
+
+**Free**
+- Limited AI usage
+- Single workspace
+- No agent mode
+
+**Pro**
+- Higher AI limits
+- Agent mode enabled
+- GitHub repository integration
+
+**Team (Future)**
+- Shared workspaces
+- Shared agents
+- Audit logs
+
+---
+
+### Billing Scope
+- Stripe integration
+- Monthly subscriptions only
+- Plan-based feature flags
+
+### Explicitly Out of Scope
+- Usage-based billing
+- Trials or coupons
+- Annual plans
+- Invoices / enterprise billing
+
+---
+
+## 7.4 Feature Gating & Entitlements
+
+### Gated Capabilities
+- Agent mode access
+- AI token limits
+- GitHub private repository access
+- Team features
+
+### Enforcement Points
+- Server Actions
+- Hono middleware
+- UI-level guards
+
+### Design Principle
+All gating must be:
+- Server-enforced
+- Deterministic
+- Easy to audit
+
+---
+
+## 7.5 User Account & Settings
+
+### Scope
+- Profile details
+- Connected GitHub account
+- Current subscription plan
+- Billing portal link
+
+---
+
+## 7.6 Non-Goals
+
+This phase explicitly does **not** include:
+- Advanced onboarding flows
+- Referral programs
+- Enterprise SSO
+- Analytics dashboards
+- Usage metering
+
+---
+
+## Phase Exit Criteria
+
+This phase is considered complete when:
+1. Public homepage is live
+2. Editor routes are protected
+3. Users can subscribe to a paid plan
+4. Features are gated by plan
+5. Billing is production-safe
+
+---
+
+## Strategic Note
+
+This phase exists to **wrap value**, not to create it.
+
+Core differentiation remains:
+- AI agents
+- Repository awareness
+- Developer flow
+
+Monetization must never compromise these foundations.
+
 End of Document
