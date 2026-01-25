@@ -111,6 +111,120 @@ Deliver a functional **web-based code editor** with basic AI assistance.
 
 ---
 
+# PHASE 1.5: Workspace Persistence & Cloud Sync
+
+### Goal
+Enable users to **save, restore, and sync workspaces** across sessions and devices, independent of GitHub, while keeping the editor fast and predictable.
+
+This phase establishes **workspace persistence** as product infrastructure and must **not leak into core editor logic**.
+
+---
+
+## 4.5 Workspace Persistence
+
+### Scope
+Persist the following workspace state:
+- File tree structure
+- File contents
+- Open tabs
+- Active file & cursor position
+- Editor layout (single / split)
+
+### Behavior
+- Workspace state is restored automatically on reload or login
+- Each user has one or more named workspaces
+- Workspace ownership is tied to authenticated user
+
+---
+
+## 4.6 Storage Strategy (Initial)
+
+### Architecture
+- Backend-managed persistence
+- Database for workspace metadata
+- Database or object storage for file contents
+
+### Notes
+- Optimize for simplicity over scale initially
+- Large files and binary assets are out of scope
+
+---
+
+## 4.7 Autosave & Draft Recovery
+
+### Autosave
+- Autosave triggered on file edit
+- Debounced writes to reduce load
+- Last-known-good state always stored
+
+### Draft Recovery
+- Restore unsaved changes after:
+  - Page reload
+  - Browser crash
+  - Network failure
+
+---
+
+## 4.8 Cross-Device Sync
+
+### Scope
+- User logs in on a new device
+- Most recent workspace state is loaded
+- Single source of truth per workspace
+
+### Explicitly Out of Scope
+- Real-time multi-device sync
+- Conflict resolution UI
+
+---
+
+## 4.9 GitHub Interoperability Rules
+
+### GitHub-Linked Projects
+- GitHub remains the source of truth
+- Local changes tracked separately
+- No automatic push to GitHub
+
+### Non-GitHub Projects
+- Cloud workspace is the source of truth
+
+---
+
+## 4.10 API & Security Considerations
+
+### APIs
+- Implemented via Hono
+- Authenticated access only
+- Workspace-scoped permissions
+
+### Security
+- Per-user data isolation
+- Plan-based limits:
+  - Workspace count
+  - Storage size
+
+---
+
+## 4.11 Non-Goals
+
+This phase explicitly does **not** include:
+- Offline-first synchronization
+- Version history or time-travel UI
+- Merge conflict handling
+- Real-time collaboration
+
+---
+
+## Phase Exit Criteria
+
+This phase is considered complete when:
+1. Workspace state persists across reloads
+2. Users can resume work on another device
+3. Autosave prevents data loss
+4. Storage and workspace limits are enforceable
+
+---
+
 # PHASE 2: Inline AI & GitHub Foundations
 
 ### Goal
