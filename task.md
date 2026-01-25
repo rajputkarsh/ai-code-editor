@@ -99,4 +99,52 @@ Confirm:
 - Editor components do NOT:
   - Call persistence APIs directly
   - Know about storage or limits
-- Persistence logic remains isolated under:
+- Persistence logic remains isolated under: /lib/workspace
+- APIs are implemented only via **Hono**
+- Auth is provided via **Clerk**, but not coupled
+
+---
+
+## 🧪 REQUIRED ARTIFACTS
+
+Ensure the following exist before closing the phase:
+- Clear comments documenting:
+- Autosave guarantees
+- Draft recovery assumptions
+- Source-of-truth rules
+- No TODOs that imply unfinished core behavior
+- No commented-out experimental sync logic
+
+---
+
+## 🚫 FINAL CONSTRAINTS
+
+Do NOT:
+- Add UX polish
+- Add collaboration hooks
+- Add GitHub automation
+- Add billing logic
+- Add analytics
+
+If something seems “almost useful,” **leave a comment and stop**.
+
+---
+
+## ✅ PHASE COMPLETION DECLARATION
+
+This phase is considered **complete** only if:
+- All exit criteria are met
+- All non-goals are enforced
+- No editor behavior changed
+- Infrastructure is stable and predictable
+
+Once complete, **lock this phase** and move forward.
+
+---
+
+## 🧠 FINAL INSTRUCTION
+
+This prompt exists to **prevent over-engineering**.
+
+Finish strong, stop cleanly, and do not extend the scope.
+
