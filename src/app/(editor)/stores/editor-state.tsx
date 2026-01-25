@@ -12,9 +12,11 @@ interface EditorStateContextType {
     activeSecondaryTabId: string | null; // For split view
     isSplit: boolean;
     tabs: EditorTab[];
-    openFile: (fileId: string) => void;
+    activePaneForFileOpen: 'primary' | 'secondary'; // Which pane to open new files in
+    openFile: (fileId: string, pane?: 'primary' | 'secondary') => void;
     closeTab: (tabId: string) => void;
     setActiveTab: (tabId: string, pane?: 'primary' | 'secondary') => void;
+    setActivePaneForFileOpen: (pane: 'primary' | 'secondary') => void;
     toggleSplit: () => void;
 }
 
@@ -25,21 +27,48 @@ export function EditorStateProvider({ children }: { children: React.ReactNode })
     const [activeTabId, setActiveTabId] = useState<string | null>(null);
     const [activeSecondaryTabId, setActiveSecondaryTabId] = useState<string | null>(null);
     const [isSplit, setIsSplit] = useState(false);
+    const [activePaneForFileOpen, setActivePaneForFileOpen] = useState<'primary' | 'secondary'>('primary');
 
-    // Correct implementation of openFile using synchronous updates
-    const openFile = useCallback((fileId: string) => {
-        // Check existing tabs synchronously from current state
+    // Updated openFile to support opening in specific panes
+    const openFile = useCallback((fileId: string, pane?: 'primary' | 'secondary') => {
+        // Determine which pane to use
+        const targetPane = pane || activePaneForFileOpen;
+        
+        // Check if file is already open in a tab
         const existingTab = tabs.find((t) => t.fileId === fileId);
 
         if (existingTab) {
-            setActiveTabId(existingTab.id);
+            // File already has a tab, activate it in the target pane
+            if (targetPane === 'secondary' && isSplit) {
+                setActiveSecondaryTabId(existingTab.id);
+                // If same tab is in both panes, clear it from primary
+                if (existingTab.id === activeTabId) {
+                    // Find another tab for primary pane
+                    const otherTab = tabs.find(t => t.id !== existingTab.id);
+                    setActiveTabId(otherTab ? otherTab.id : null);
+                }
+            } else {
+                setActiveTabId(existingTab.id);
+                // If same tab is in both panes, clear it from secondary
+                if (isSplit && existingTab.id === activeSecondaryTabId) {
+                    // Find another tab for secondary pane
+                    const otherTab = tabs.find(t => t.id !== existingTab.id);
+                    setActiveSecondaryTabId(otherTab ? otherTab.id : null);
+                }
+            }
             return;
         }
 
+        // Create new tab and activate it in the target pane
         const newTab: EditorTab = { id: crypto.randomUUID(), fileId };
         setTabs(prev => [...prev, newTab]);
-        setActiveTabId(newTab.id);
-    }, [tabs]);
+        
+        if (targetPane === 'secondary' && isSplit) {
+            setActiveSecondaryTabId(newTab.id);
+        } else {
+            setActiveTabId(newTab.id);
+        }
+    }, [tabs, activePaneForFileOpen, isSplit, activeTabId, activeSecondaryTabId]);
 
     const closeTab = useCallback((tabId: string) => {
         setTabs((prev) => {
@@ -59,21 +88,48 @@ export function EditorStateProvider({ children }: { children: React.ReactNode })
     const setActiveTab = useCallback((tabId: string, pane: 'primary' | 'secondary' = 'primary') => {
         if (pane === 'secondary' && isSplit) {
             setActiveSecondaryTabId(tabId);
+            // When user clicks a tab in secondary pane, make secondary the active pane
+            setActivePaneForFileOpen('secondary');
+            // If same tab is now in both panes, clear it from primary
+            if (tabId === activeTabId) {
+                const otherTab = tabs.find(t => t.id !== tabId);
+                setActiveTabId(otherTab ? otherTab.id : null);
+            }
         } else {
             setActiveTabId(tabId);
+            // When user clicks a tab in primary pane, make primary the active pane
+            setActivePaneForFileOpen('primary');
+            // If same tab is now in both panes, clear it from secondary
+            if (isSplit && tabId === activeSecondaryTabId) {
+                const otherTab = tabs.find(t => t.id !== tabId);
+                setActiveSecondaryTabId(otherTab ? otherTab.id : null);
+            }
         }
-    }, [isSplit]);
+    }, [isSplit, activeTabId, activeSecondaryTabId, tabs]);
 
     const toggleSplit = useCallback(() => {
         setIsSplit((prev) => {
             const next = !prev;
-            if (next && !activeSecondaryTabId && activeTabId) {
-                // Simplified: Copy active tab to secondary when opening split
-                setActiveSecondaryTabId(activeTabId);
+            if (next) {
+                // When enabling split view, set up secondary pane
+                if (!activeSecondaryTabId) {
+                    // If there are at least 2 tabs, use the second one
+                    // Otherwise, use the first tab in both panes
+                    if (tabs.length >= 2) {
+                        setActiveSecondaryTabId(tabs[1].id);
+                    } else if (activeTabId) {
+                        setActiveSecondaryTabId(activeTabId);
+                    }
+                }
+                // Set secondary as active pane when opening split
+                setActivePaneForFileOpen('secondary');
+            } else {
+                // When disabling split, reset to primary pane
+                setActivePaneForFileOpen('primary');
             }
             return next;
         });
-    }, [activeTabId, activeSecondaryTabId]);
+    }, [activeTabId, activeSecondaryTabId, tabs]);
 
     const value = useMemo(
         () => ({
@@ -81,12 +137,14 @@ export function EditorStateProvider({ children }: { children: React.ReactNode })
             activeSecondaryTabId,
             isSplit,
             tabs,
+            activePaneForFileOpen,
             openFile,
             closeTab,
             setActiveTab,
+            setActivePaneForFileOpen,
             toggleSplit
         }),
-        [activeTabId, activeSecondaryTabId, isSplit, tabs, openFile, closeTab, setActiveTab, toggleSplit]
+        [activeTabId, activeSecondaryTabId, isSplit, tabs, activePaneForFileOpen, openFile, closeTab, setActiveTab, toggleSplit]
     );
 
     return <EditorStateContext.Provider value={value}>{children}</EditorStateContext.Provider>;

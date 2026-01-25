@@ -16,7 +16,7 @@ import { ChatContext } from '@/lib/ai/types';
 import { detectLanguage } from '@/lib/file-utils';
 
 const EditorArea = () => {
-    const { activeTabId, activeSecondaryTabId, isSplit, tabs } = useEditorState();
+    const { activeTabId, activeSecondaryTabId, isSplit, tabs, activePaneForFileOpen, setActivePaneForFileOpen } = useEditorState();
     const { files } = useFileSystem();
 
     const activeTab1 = tabs.find(t => t.id === activeTabId);
@@ -25,11 +25,27 @@ const EditorArea = () => {
     const activeTab2 = tabs.find(t => t.id === activeSecondaryTabId);
     const activeFile2 = activeTab2 ? files[activeTab2.fileId] : null;
 
-    const renderEmptyState = (msg: string) => (
-        <div className="h-full w-full flex items-center justify-center text-neutral-600 select-none bg-[#1e1e1e]">
+    const renderEmptyState = (msg: string, pane: 'primary' | 'secondary') => (
+        <div 
+            className="h-full w-full flex items-center justify-center text-neutral-600 select-none bg-[#1e1e1e]"
+        >
             <div className="text-center">
                 <p className="mb-2 text-lg font-medium">{msg}</p>
                 <p className="text-sm">Select a file to start editing</p>
+                {isSplit && (
+                    <button
+                        onClick={() => setActivePaneForFileOpen(pane)}
+                        className={`
+                            mt-3 px-3 py-1.5 rounded text-xs transition-colors
+                            ${activePaneForFileOpen === pane 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                            }
+                        `}
+                    >
+                        {activePaneForFileOpen === pane ? '● Active Pane' : 'Click to Activate'}
+                    </button>
+                )}
             </div>
         </div>
     );
@@ -39,30 +55,63 @@ const EditorArea = () => {
             <EditorTabs />
             {/* Editor panes - side by side on desktop, stacked on mobile/tablet */}
             <div className="flex-1 relative flex flex-col md:flex-row">
-                {/* Pane 1 */}
-                <div className={`
-                    ${isSplit ? 'md:w-1/2 w-full md:border-r border-b md:border-b-0 border-neutral-800' : 'w-full'} 
-                    ${isSplit ? 'h-1/2 md:h-full' : 'h-full'}
-                `}>
+                {/* Pane 1 - Primary (Left) */}
+                <div 
+                    className={`
+                        ${isSplit ? 'md:w-1/2 w-full md:border-r border-b md:border-b-0 border-neutral-800' : 'w-full'} 
+                        ${isSplit ? 'h-1/2 md:h-full' : 'h-full'}
+                        relative
+                    `}
+                >
+                    {/* Active pane indicator - click to activate */}
+                    {isSplit && (
+                        <button
+                            onClick={() => setActivePaneForFileOpen('primary')}
+                            className={`
+                                absolute top-2 right-2 z-10 px-2 py-1 text-xs rounded shadow-lg transition-all
+                                ${activePaneForFileOpen === 'primary'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white'
+                                }
+                            `}
+                        >
+                            {activePaneForFileOpen === 'primary' ? '● Left Active' : 'Left'}
+                        </button>
+                    )}
                     {activeTab1 && activeFile1 ? (
                         <LazyCodeEditor key={activeTab1.id} fileId={activeFile1.id} />
-                    ) : (isSplit ? renderEmptyState("Active Editor") : (
+                    ) : (isSplit ? renderEmptyState("Left Pane", 'primary') : (
                         <div className="h-full w-full flex items-center justify-center text-neutral-600 select-none">
                             <div className="text-center px-4">
                                 <p className="mb-2 text-lg font-medium">Welcome to AI Code Editor</p>
                                 <p className="text-sm">Select a file to start editing</p>
-                                <p className="text-xs mt-4 opacity-50">CMD+P to search files (coming soon)</p>
+                                <p className="text-xs mt-4 opacity-50">Click the split view button to work on multiple files</p>
                             </div>
                         </div>
                     ))}
                 </div>
 
-                {/* Pane 2 - Stacks below Pane 1 on mobile, side-by-side on desktop */}
+                {/* Pane 2 - Secondary (Right) - Stacks below Pane 1 on mobile, side-by-side on desktop */}
                 {isSplit && (
-                    <div className="md:w-1/2 w-full h-1/2 md:h-full">
+                    <div 
+                        className="md:w-1/2 w-full h-1/2 md:h-full relative"
+                    >
+                        {/* Active pane indicator - click to activate */}
+                        <button
+                            onClick={() => setActivePaneForFileOpen('secondary')}
+                            className={`
+                                absolute top-2 right-2 z-10 px-2 py-1 text-xs rounded shadow-lg transition-all
+                                ${activePaneForFileOpen === 'secondary'
+                                    ? 'bg-purple-600 text-white'
+                                    : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white'
+                                }
+                            `}
+                        >
+                            {activePaneForFileOpen === 'secondary' ? '● Right Active' : 'Right'}
+                        </button>
                         {activeTab2 && activeFile2 ? (
                             <LazyCodeEditor key={activeTab2.id} fileId={activeFile2.id} />
-                        ) : renderEmptyState("Secondary Editor")}
+                        ) : renderEmptyState("Right Pane", 'secondary')}
                     </div>
                 )}
             </div>
