@@ -11,7 +11,7 @@ import { AIProvider, AIStreamChunk, ChatMessage } from '../types';
  * Gemini-specific configuration
  */
 const GEMINI_CONFIG = {
-    model: 'gemini-1.5-flash', // Fast model for chat, can be upgraded to 'gemini-1.5-pro' for complex tasks
+    model: 'gemini-2.5-flash', // Gemini 2.5 Flash - Fast and versatile model (June 2025)
     generationConfig: {
         temperature: 0.7,
         topP: 0.95,

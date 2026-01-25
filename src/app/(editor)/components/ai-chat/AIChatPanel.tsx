@@ -10,6 +10,7 @@ import { useAIChatState } from '../../stores/ai-chat-state';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { PromptTemplateSelector } from './PromptTemplateSelector';
+import { ChatErrorMessage } from './ChatErrorMessage';
 import { X, Trash2, MessageSquare } from 'lucide-react';
 import { PromptTemplate } from '@/lib/ai/prompt-templates';
 import { ChatContext } from '@/lib/ai/types';
@@ -88,11 +89,13 @@ export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
 
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
-                        const data = line.slice(6);
+                        const data = line.slice(6).trim();
                         
                         if (data === '[DONE]') {
                             break;
                         }
+
+                        if (!data) continue; // Skip empty data
 
                         try {
                             const parsed = JSON.parse(data);
@@ -106,7 +109,13 @@ export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
                                 setStreamingMessage(accumulatedText);
                             }
                         } catch (e) {
-                            // Ignore JSON parse errors for incomplete chunks
+                            // If JSON parse fails, it might be incomplete chunk - continue
+                            // But if it's an Error object (from parsed.error), rethrow it
+                            if (e instanceof Error && e.message.includes('Gemini API error')) {
+                                throw e;
+                            }
+                            // Otherwise ignore parse errors for incomplete chunks
+                            console.debug('Skipping incomplete chunk:', data);
                         }
                     }
                 }
@@ -117,13 +126,15 @@ export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
         } catch (error) {
             console.error('Chat error:', error);
             
-            // Add error message
+            // Stop streaming first
+            finishStreaming();
+            
+            // Add error message with special formatting
+            const errorMessage = error instanceof Error ? error.message : 'Failed to get response';
             addMessage({
                 role: 'assistant',
-                content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}`,
+                content: `[ERROR] ${errorMessage}`,
             });
-            
-            finishStreaming();
         }
     };
 

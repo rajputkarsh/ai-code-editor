@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { ChatMessage as ChatMessageType } from '@/lib/ai/types';
+import { ChatErrorMessage } from './ChatErrorMessage';
 
 interface ChatMessageProps {
     message: ChatMessageType;
@@ -12,6 +13,13 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message }: ChatMessageProps) {
     const isUser = message.role === 'user';
+    const isError = message.content.startsWith('[ERROR]');
+    
+    // Handle error messages separately
+    if (isError && !isUser) {
+        const errorText = message.content.replace('[ERROR] ', '');
+        return <ChatErrorMessage error={errorText} />;
+    }
     
     return (
         <div

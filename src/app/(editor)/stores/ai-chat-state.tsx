@@ -6,7 +6,7 @@
  * This store is session-local and not persisted (as per Phase 4.3 requirements)
  */
 
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useRef } from 'react';
 import { ChatMessage } from '@/lib/ai/types';
 
 interface AIChatStateContextType {
@@ -43,6 +43,9 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
     const [isStreaming, setIsStreaming] = useState(false);
     const [streamingMessage, setStreamingMessage] = useState('');
     
+    // Use ref to always have access to latest streaming message
+    const streamingMessageRef = useRef('');
+    
     // UI state
     const [isPanelOpen, setIsPanelOpen] = useState(false);
     
@@ -57,6 +60,7 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
     const clearMessages = useCallback(() => {
         setMessages([]);
         setStreamingMessage('');
+        streamingMessageRef.current = '';
         setContextInfo(null);
     }, []);
 
@@ -64,22 +68,42 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
     const startStreaming = useCallback(() => {
         setIsStreaming(true);
         setStreamingMessage('');
+        streamingMessageRef.current = '';
+    }, []);
+
+    const setStreamingMessageWrapper = useCallback((text: string) => {
+        streamingMessageRef.current = text;
+        setStreamingMessage(text);
     }, []);
 
     const finishStreaming = useCallback(() => {
+        // Use ref to get the latest message value
+        const finalMessage = streamingMessageRef.current;
+        
+        console.log('[AI Chat] Finishing stream, message length:', finalMessage.length);
+        
         // Add the complete streamed message to history
-        if (streamingMessage.trim()) {
-            setMessages((prev) => [
-                ...prev,
-                {
-                    role: 'assistant',
-                    content: streamingMessage,
-                },
-            ]);
+        if (finalMessage.trim()) {
+            setMessages((prev) => {
+                const newMessages: ChatMessage[] = [
+                    ...prev,
+                    {
+                        role: 'assistant' as const,
+                        content: finalMessage,
+                    },
+                ];
+                console.log('[AI Chat] Added message to history, total messages:', newMessages.length);
+                return newMessages;
+            });
+        } else {
+            console.warn('[AI Chat] Streaming message was empty, not adding to history');
         }
+        
+        // Clear streaming state
         setIsStreaming(false);
         setStreamingMessage('');
-    }, [streamingMessage]);
+        streamingMessageRef.current = '';
+    }, []);
 
     // Panel management
     const togglePanel = useCallback(() => {
@@ -101,7 +125,7 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
             clearMessages,
             isStreaming,
             streamingMessage,
-            setStreamingMessage,
+            setStreamingMessage: setStreamingMessageWrapper,
             startStreaming,
             finishStreaming,
             isPanelOpen,
@@ -117,6 +141,7 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
             clearMessages,
             isStreaming,
             streamingMessage,
+            setStreamingMessageWrapper,
             startStreaming,
             finishStreaming,
             isPanelOpen,
