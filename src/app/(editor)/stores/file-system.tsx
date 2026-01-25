@@ -33,7 +33,7 @@ function vfsNodeToFileNode(node: VFSNode): FileNode {
 }
 
 export function FileSystemProvider({ children }: { children: React.ReactNode }) {
-    const { vfs } = useWorkspace();
+    const { vfs, markDirty } = useWorkspace();
     
     const [files, setFiles] = useState<Record<string, FileNode>>(() => {
         // Initialize with a root folder and a sample file
@@ -81,6 +81,9 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
             });
             
             setFiles(fileNodes);
+            
+            // Trigger autosave after creating file
+            markDirty();
         } else {
             // Fallback to old behavior
             const id = generateId();
@@ -108,7 +111,7 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
         }
         
         return newId;
-    }, [vfs]);
+    }, [vfs, markDirty]);
 
     const createFolder = useCallback((parentId: string, name: string) => {
         let newId = '';
@@ -124,6 +127,9 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
             });
             
             setFiles(fileNodes);
+            
+            // Trigger autosave after creating folder
+            markDirty();
         } else {
             // Fallback to old behavior
             const id = generateId();
@@ -151,7 +157,7 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
         }
         
         return newId;
-    }, [vfs]);
+    }, [vfs, markDirty]);
 
     const deleteNode = useCallback((id: string) => {
         // Update VFS if available
@@ -165,6 +171,9 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
             });
             
             setFiles(fileNodes);
+            
+            // Trigger autosave after deleting node
+            markDirty();
         } else {
             // Fallback to old behavior
             setFiles((prev) => {
@@ -197,7 +206,7 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
                 return next;
             });
         }
-    }, [vfs]);
+    }, [vfs, markDirty]);
 
     const renameNode = useCallback((id: string, newName: string) => {
         // Update VFS if available
@@ -211,6 +220,9 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
             });
             
             setFiles(fileNodes);
+            
+            // Trigger autosave after renaming node
+            markDirty();
         } else {
             // Fallback to old behavior
             setFiles((prev) => {
@@ -221,7 +233,7 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
                 };
             });
         }
-    }, [vfs]);
+    }, [vfs, markDirty]);
 
     const updateFileContent = useCallback((id: string, content: string) => {
         // Update VFS if available
@@ -235,6 +247,10 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
             });
             
             setFiles(fileNodes);
+            
+            // Note: markDirty() is also called in CodeEditor, but we call it here
+            // to ensure all file content updates trigger autosave
+            markDirty();
         } else {
             // Fallback to old behavior
             setFiles((prev) => ({
@@ -242,7 +258,7 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
                 [id]: { ...prev[id], content },
             }));
         }
-    }, [vfs]);
+    }, [vfs, markDirty]);
 
     const value = useMemo(
         () => ({

@@ -44,6 +44,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
    * Restore workspace on mount
    * 
    * Automatically loads the most recently opened workspace when the editor loads.
+   * If no workspace exists, creates a new default workspace.
    * This provides a seamless experience across sessions and devices.
    */
   useEffect(() => {
@@ -61,10 +62,34 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           setWorkspace(latestWorkspace);
           const vfsInstance = new VirtualFileSystem(latestWorkspace.vfs);
           setVfs(vfsInstance);
+        } else {
+          // No workspace exists - create a new default workspace
+          console.log('No workspace found, creating new workspace...');
+          const newWorkspace = createEmptyWorkspace('My Project');
+          setWorkspace(newWorkspace);
+          const vfsInstance = new VirtualFileSystem(newWorkspace.vfs);
+          setVfs(vfsInstance);
+          
+          // Save the new workspace to the server
+          try {
+            await createWorkspaceAPI({
+              id: newWorkspace.metadata.id,
+              name: newWorkspace.metadata.name,
+              source: newWorkspace.metadata.source,
+              vfs: newWorkspace.vfs,
+            });
+            console.log('Created new workspace:', newWorkspace.metadata.name);
+          } catch (saveErr) {
+            console.warn('Failed to save new workspace (will try on first edit):', saveErr);
+          }
         }
       } catch (err) {
         console.warn('Failed to restore workspace:', err);
-        // Don't show error to user - just silently continue without restoration
+        // Create a fallback workspace even if API fails
+        const fallbackWorkspace = createEmptyWorkspace('My Project');
+        setWorkspace(fallbackWorkspace);
+        const vfsInstance = new VirtualFileSystem(fallbackWorkspace.vfs);
+        setVfs(vfsInstance);
       } finally {
         setIsLoading(false);
         isRestoringRef.current = false;
