@@ -23,6 +23,9 @@ export function ChatErrorMessage({ error }: ChatErrorMessageProps) {
     const isRateLimitError = error.toLowerCase().includes('rate limit') ||
                               error.toLowerCase().includes('quota') ||
                               error.toLowerCase().includes('429');
+    
+    const isTokenLimitError = error.toLowerCase().includes('token limit') ||
+                               error.toLowerCase().includes('token') && error.toLowerCase().includes('exceeded');
 
     return (
         <div className="p-4 bg-red-900/20 border border-red-700 rounded m-3">
@@ -62,7 +65,19 @@ export function ChatErrorMessage({ error }: ChatErrorMessageProps) {
                         </div>
                     )}
                     
-                    {!isApiKeyError && !isModelError && !isRateLimitError && (
+                    {isTokenLimitError && (
+                        <div className="text-xs text-red-300 space-y-1">
+                            <p className="font-medium">💡 Token limit exceeded:</p>
+                            <ul className="list-disc list-inside space-y-1 ml-2">
+                                <li>Your conversation has become too long</li>
+                                <li>Clear the chat to start fresh</li>
+                                <li>Use shorter code selections</li>
+                                <li>Break complex questions into smaller parts</li>
+                            </ul>
+                        </div>
+                    )}
+                    
+                    {!isApiKeyError && !isModelError && !isRateLimitError && !isTokenLimitError && (
                         <div className="text-xs text-red-300">
                             <p>Check the browser console and server logs for more details.</p>
                         </div>

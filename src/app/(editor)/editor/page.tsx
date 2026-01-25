@@ -4,8 +4,8 @@ import React from 'react';
 import { EditorLayout } from '../components/layout/EditorLayout';
 import { FileExplorer } from '../components/file-explorer/FileExplorer';
 import { EditorTabs } from '../components/editor/EditorTabs';
-import { CodeEditor } from '../components/editor/CodeEditor';
-import { AIChatPanel } from '../components/ai-chat';
+import { LazyCodeEditor } from '../components/editor/LazyCodeEditor';
+import { LazyAIChatPanel } from '../components/ai-chat/LazyAIChatPanel';
 import { useEditorState } from '../stores/editor-state';
 import { useFileSystem } from '../stores/file-system';
 import { useAIChatState } from '../stores/ai-chat-state';
@@ -37,14 +37,18 @@ const EditorArea = () => {
     return (
         <div className="flex flex-col h-full bg-[#1e1e1e]">
             <EditorTabs />
-            <div className="flex-1 relative flex">
+            {/* Editor panes - side by side on desktop, stacked on mobile/tablet */}
+            <div className="flex-1 relative flex flex-col md:flex-row">
                 {/* Pane 1 */}
-                <div className={`${isSplit ? 'w-1/2 border-r border-neutral-800' : 'w-full'} h-full`}>
+                <div className={`
+                    ${isSplit ? 'md:w-1/2 w-full md:border-r border-b md:border-b-0 border-neutral-800' : 'w-full'} 
+                    ${isSplit ? 'h-1/2 md:h-full' : 'h-full'}
+                `}>
                     {activeTab1 && activeFile1 ? (
-                        <CodeEditor key={activeTab1.id} fileId={activeFile1.id} />
+                        <LazyCodeEditor key={activeTab1.id} fileId={activeFile1.id} />
                     ) : (isSplit ? renderEmptyState("Active Editor") : (
                         <div className="h-full w-full flex items-center justify-center text-neutral-600 select-none">
-                            <div className="text-center">
+                            <div className="text-center px-4">
                                 <p className="mb-2 text-lg font-medium">Welcome to AI Code Editor</p>
                                 <p className="text-sm">Select a file to start editing</p>
                                 <p className="text-xs mt-4 opacity-50">CMD+P to search files (coming soon)</p>
@@ -53,11 +57,11 @@ const EditorArea = () => {
                     ))}
                 </div>
 
-                {/* Pane 2 */}
+                {/* Pane 2 - Stacks below Pane 1 on mobile, side-by-side on desktop */}
                 {isSplit && (
-                    <div className="w-1/2 h-full">
+                    <div className="md:w-1/2 w-full h-1/2 md:h-full">
                         {activeTab2 && activeFile2 ? (
-                            <CodeEditor key={activeTab2.id} fileId={activeFile2.id} />
+                            <LazyCodeEditor key={activeTab2.id} fileId={activeFile2.id} />
                         ) : renderEmptyState("Secondary Editor")}
                     </div>
                 )}
@@ -157,7 +161,7 @@ export default function EditorPage() {
                     )}
                 </div>
             }
-            aiChat={<AIChatPanel onTemplateSelect={handleTemplateSelect} />}
+            aiChat={<LazyAIChatPanel onTemplateSelect={handleTemplateSelect} />}
         />
     );
 }

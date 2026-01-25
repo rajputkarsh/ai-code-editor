@@ -1,6 +1,6 @@
 /**
  * Hono API Routes for AI Chat
- * Handles streaming AI chat completions
+ * Handles streaming AI chat completions with token limit enforcement
  * 
  * Streaming requires a proper HTTP endpoint, so we use Hono instead of Server Actions
  */
@@ -9,6 +9,8 @@ import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
 import { getGeminiProvider } from '@/lib/ai/provider/gemini';
 import { ChatMessage } from '@/lib/ai/types';
+import { validateConversationTokens } from '@/lib/ai/token-utils';
+import { env } from '@/lib/config/env';
 import { z } from 'zod';
 
 const aiChatApp = new Hono();
@@ -133,6 +135,19 @@ aiChatApp.post('/complete', async (c) => {
             return c.json(
                 {
                     error: 'Last message must be from user',
+                },
+                400
+            );
+        }
+
+        // Validate token limits (server-side enforcement)
+        const tokenValidation = validateConversationTokens(messages as ChatMessage[]);
+        if (!tokenValidation.valid) {
+            return c.json(
+                {
+                    error: tokenValidation.error || 'Token limit exceeded',
+                    inputTokens: tokenValidation.inputTokens,
+                    maxInputTokens: env.AI_MAX_INPUT_TOKENS,
                 },
                 400
             );

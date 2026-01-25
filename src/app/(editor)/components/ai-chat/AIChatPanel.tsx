@@ -77,7 +77,23 @@ export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
             });
 
             if (!response.ok) {
-                throw new Error(`API error: ${response.statusText}`);
+                // Try to parse error details from response
+                try {
+                    const errorData = await response.json();
+                    const errorMessage = errorData.error || response.statusText;
+                    
+                    // Provide more context for token limit errors
+                    if (errorData.inputTokens && errorData.maxInputTokens) {
+                        throw new Error(
+                            `${errorMessage}\n\nYour conversation used ${errorData.inputTokens} tokens but the limit is ${errorData.maxInputTokens} tokens. Consider starting a new conversation.`
+                        );
+                    }
+                    
+                    throw new Error(errorMessage);
+                } catch (parseError) {
+                    // If JSON parsing fails, use status text
+                    throw new Error(`API error: ${response.statusText}`);
+                }
             }
 
             // Read stream
@@ -198,12 +214,20 @@ export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
     }
 
     return (
-        <div className="flex flex-col h-full bg-neutral-900 border-l border-neutral-800 w-96 flex-shrink-0">
+        <div className="
+            flex flex-col h-full bg-neutral-900 border-l border-neutral-800 
+            w-full md:w-96 
+            shrink-0
+            fixed md:relative
+            top-0 right-0
+            z-40
+            shadow-2xl md:shadow-none
+        ">
             {/* Header */}
             <div className="flex items-center justify-between p-3 border-b border-neutral-800 bg-neutral-850">
-                <div className="flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4 text-purple-500" />
-                    <h2 className="text-sm font-semibold text-neutral-200">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <MessageSquare className="w-4 h-4 text-purple-500 shrink-0" />
+                    <h2 className="text-sm font-semibold text-neutral-200 truncate">
                         AI Assistant
                     </h2>
                 </div>
@@ -229,7 +253,7 @@ export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
             {/* Context info */}
             {contextInfo && (
                 <div className="px-3 py-2 text-xs text-neutral-400 bg-neutral-850 border-b border-neutral-800">
-                    <span className="font-medium">Context:</span> {contextInfo}
+                    <span className="font-medium">Context:</span> <span className="truncate inline-block max-w-[90%]">{contextInfo}</span>
                 </div>
             )}
 

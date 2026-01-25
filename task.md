@@ -1,8 +1,8 @@
-# Phase 4.3 – Contextual AI Chat (Gemini + Inngest) Execution Prompt
+# Phase 4.4 – Non-Functional Scope Execution Prompt
 
-You are a **senior full-stack engineer** implementing **Phase 4.3: Contextual AI Chat** for a **Next.js (App Router) web-based code editor**.
+You are a **senior frontend + platform engineer** implementing **Phase 4.4: Non-Functional Requirements** for a **Next.js (App Router) web-based code editor**.
 
-This phase adds **AI chat capabilities** using **Google Gemini (Google AI Studio)**.
+This phase focuses on **responsiveness, performance, and safety limits** without introducing new product features.
 
 Follow all existing architectural constraints strictly.
 
@@ -10,13 +10,12 @@ Follow all existing architectural constraints strictly.
 
 ## 🎯 PHASE GOAL
 
-Implement a **side-panel AI chat** that:
-- Uses Gemini as the LLM provider
-- Accepts selected code or file context
-- Supports predefined prompt templates
-- Produces **non-destructive, read-only responses**
+Harden the editor so that it:
+- Works well across screen sizes
+- Loads fast and predictably
+- Enforces AI token usage limits to prevent abuse
 
-This phase must **not modify code automatically**.
+No new editor features should be introduced.
 
 ---
 
@@ -24,130 +23,94 @@ This phase must **not modify code automatically**.
 
 ---
 
-## 1️⃣ AI Provider: Gemini (Google AI Studio)
+## 1️⃣ Responsive UI
 
 ### Requirements
-- Use Gemini via Google AI Studio API
-- Use **streaming responses**
-- Wrap Gemini behind a **provider abstraction**
+- Editor layout must adapt to:
+  - Desktop
+  - Tablet
+  - Small laptop screens
+- Core areas:
+  - File explorer
+  - Editor panes
+  - AI chat panel
 
-### Provider Location
-/lib/ai/provider/gemini.ts
+### Behavior
+- Side panels must be collapsible
+- Editor always retains usable minimum width
+- Split views must stack or collapse on small screens
+
+### Constraints
+- No new design system
+- No pixel-perfect polish
+- Functional responsiveness only
+
+---
+
+## 2️⃣ Fast Editor Load
+
+### Requirements
+Optimize initial load so:
+- Editor shell renders immediately
+- Monaco loads lazily
+- Heavy modules are code-split
+
+### Implementation Rules
+- Use dynamic imports for:
+  - Monaco editor
+  - AI chat panel
+- Avoid blocking server components
+- Defer non-critical JS
+
+### Performance Targets (Soft)
+- First meaningful paint < 2s (dev environment)
+- Monaco loaded only when editor is visible
+
+---
+
+## 3️⃣ Token Usage Limits (AI Safety)
+
+### Scope
+Introduce **basic token usage controls** for AI chat to prevent runaway costs and abuse.
 
 ### Rules
-- Do NOT call Gemini directly from UI components
-- All calls go through:
-  - Server Actions (preferred)
-  - OR Hono APIs (if streaming requires it)
+- Hard per-request token cap
+- Hard per-session token cap
+- Graceful failure when limits are exceeded
+
+### Behavior
+- UI shows:
+  - “Token limit reached” message
+- No retries
+- No partial responses beyond limit
+
+### Technical Notes
+- Token limits enforced server-side
+- Client must not be trusted
+- Limits should be configurable via env variables
 
 ---
 
-## 2️⃣ AI Chat UI (Side Panel)
+## 🧠 ARCHITECTURAL RULES
 
-### UI Requirements
-- Right-side collapsible panel
-- Chat message list (user + AI)
-- Input box with send action
-- Loading / streaming indicator
-- Clear conversation button
-
-### Placement
-/app/(editor)/components/ai-chat
-
-### UX Rules
-- Chat must not block editor interaction
-- Chat state is session-local (no persistence)
-- Messages are append-only
-
----
-
-## 3️⃣ Context Injection
-
-### Supported Context Types
-- Selected code (highest priority)
-- Active file content
-- File metadata:
-  - File name
-  - Language
-
-### Rules
-- Context is injected **explicitly**, never implicitly
-- Token usage must be bounded
-- If selection exists → ignore full file
-
----
-
-## 4️⃣ Prompt Templates (Required)
-
-Implement the following **explicit templates**:
-
-### Explain Code
-- Goal: explain logic step-by-step
-- Must not suggest changes unless asked
-
-### Find Bugs
-- Goal: identify potential issues
-- Must not rewrite code
-- Must explain reasoning
-
-### Optimize Logic
-- Goal: suggest improvements
-- Suggestions must be descriptive only
-- No auto-apply
-
-Templates must:
-- Be visible to user
-- Be editable before sending
-
----
-
-## 5️⃣ Server Execution Model
-
-### Interactive AI (NOW)
-Use **Server Actions or Hono streaming APIs** for:
-- AI chat
-- Prompt execution
-
-### Inngest Usage (LIMITED)
-- Do NOT use Inngest for live chat
-- ONLY scaffold:
-  - Event definition
-  - Future hook for long-running agent chat (commented)
-
-No background jobs yet.
-
----
-
-## 6️⃣ Safety & Non-Destructive Rules
-
-- AI responses are **read-only**
-- No code changes
-- No file writes
-- No diff application
-- UI must clearly indicate:
-  > “AI suggestions are not automatically applied”
-
----
-
-## 🧠 STATE MANAGEMENT
-
-- Keep chat state local to editor session
-- Use typed message interfaces:
-  - role: `user | assistant`
-  - content: string
-  - context metadata (optional)
+- No business logic in UI components
+- Performance optimizations must be:
+  - Commented
+  - Measurable
+- Token logic must be:
+  - Centralized
+  - Provider-agnostic (Gemini-aware, not Gemini-dependent)
 
 ---
 
 ## 🚫 OUT OF SCOPE (DO NOT IMPLEMENT)
 
-- Code auto-modification
-- Inline completions
-- Agent mode
-- Persistence
-- GitHub integration
-- Token usage analytics
-- Billing / limits UI
+- UI theming
+- Dark mode
+- Detailed performance analytics
+- User-visible token counters
+- Billing enforcement
+- Rate limiting across users
 
 ---
 
@@ -155,34 +118,26 @@ No background jobs yet.
 
 - TypeScript strict
 - No `any`
-- Clear separation:
-  - UI
-  - Prompt logic
-  - AI provider
-- Comments for:
-  - Prompt design decisions
-  - Gemini quirks
+- Clear separation of concerns
+- Comments explaining:
+  - Why something is lazy-loaded
+  - Why token limits are chosen
 
 ---
 
 ## ✅ EXPECTED OUTPUT
 
 At the end of this phase:
-1. Editor shows a side AI chat panel
-2. User can select code and ask:
-   - Explain
-   - Find bugs
-   - Optimize
-3. Gemini responses stream live
-4. No code is modified automatically
-5. Architecture is ready for agent mode later
+1. Editor layout works on multiple screen sizes
+2. Initial load is noticeably faster
+3. Monaco is lazily loaded
+4. AI chat enforces token limits safely
+5. No regressions in editor behavior
 
 ---
 
 ## 🧠 FINAL INSTRUCTION
 
-This phase is about **trust and correctness**, not automation.
+This phase is about **making the product feel solid**, not flashy.
 
-Implement **only what is required** and leave clear extension points for:
-- Agent mode
-- Inngest orchestration
+Do not introduce new features or abstractions beyond what is required to meet the non-functional goals.
