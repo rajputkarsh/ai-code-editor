@@ -1,21 +1,22 @@
-# Phase 4.2 – Project Workspace Execution Prompt
+# Phase 4.3 – Contextual AI Chat (Gemini + Inngest) Execution Prompt
 
-You are a **senior full-stack engineer** implementing **Phase 4.2: Project Workspace** for a **Next.js (App Router) web-based code editor**.
+You are a **senior full-stack engineer** implementing **Phase 4.3: Contextual AI Chat** for a **Next.js (App Router) web-based code editor**.
 
-This phase focuses on **project-level state and virtual file system foundations** that the editor will operate on.
+This phase adds **AI chat capabilities** using **Google Gemini (Google AI Studio)**.
 
-Follow existing repository structure and constraints strictly.
+Follow all existing architectural constraints strictly.
 
 ---
 
 ## 🎯 PHASE GOAL
 
-Implement a **project workspace layer** that:
-- Can import a project via ZIP
-- Maintains a virtual file system in memory
-- Tracks basic project metadata
+Implement a **side-panel AI chat** that:
+- Uses Gemini as the LLM provider
+- Accepts selected code or file context
+- Supports predefined prompt templates
+- Produces **non-destructive, read-only responses**
 
-This workspace will be consumed by the editor, file explorer, and future GitHub / persistence layers.
+This phase must **not modify code automatically**.
 
 ---
 
@@ -23,128 +24,165 @@ This workspace will be consumed by the editor, file explorer, and future GitHub 
 
 ---
 
-## 1️⃣ Project Import (ZIP)
+## 1️⃣ AI Provider: Gemini (Google AI Studio)
 
 ### Requirements
-- Allow user to upload a `.zip` file
-- Extract contents in-browser
-- Populate virtual file system from ZIP structure
+- Use Gemini via Google AI Studio API
+- Use **streaming responses**
+- Wrap Gemini behind a **provider abstraction**
 
-### Constraints
-- No backend persistence
-- No GitHub integration
-- Assume trusted input (basic validation only)
+### Provider Location
+/lib/ai/provider/gemini.ts
 
-### UX
-- Simple “Import Project” action
-- Loading state during extraction
-- Error handling for invalid ZIPs
-
----
-
-## 2️⃣ Virtual File System (VFS)
-
-### Requirements
-Implement an **in-memory virtual file system** that supports:
-- Nested folders and files
-- File content as string
-- Basic operations:
-  - Read file
-  - Write file
-  - Create file
-  - Rename file
-  - Delete file
-  - List directory contents
-
-### Design Rules
-- VFS must be **framework-agnostic**
-- No DOM or UI dependencies
-- Must be usable by:
-  - File Explorer
-  - Editor
-  - Future GitHub sync
-  - Future persistence layer
-
-### Location
-Place VFS logic under:
-
-/lib/workspace
+### Rules
+- Do NOT call Gemini directly from UI components
+- All calls go through:
+  - Server Actions (preferred)
+  - OR Hono APIs (if streaming requires it)
 
 ---
 
-## 3️⃣ Project Metadata
+## 2️⃣ AI Chat UI (Side Panel)
 
-### Required Metadata
-Track the following:
-- Project ID (UUID)
-- Project name
-- Import source (ZIP / future GitHub)
-- Created timestamp
-- Last opened timestamp
+### UI Requirements
+- Right-side collapsible panel
+- Chat message list (user + AI)
+- Input box with send action
+- Loading / streaming indicator
+- Clear conversation button
 
-### Behavior
-- Metadata stored alongside workspace state
-- Metadata accessible via workspace context
+### Placement
+/app/(editor)/components/ai-chat
 
----
-
-## 🧠 STATE MANAGEMENT RULES
-
-- Use React context to expose:
-  - Workspace
-  - VFS operations
-  - Metadata
-- Avoid global stores
-- Keep state colocated and typed
+### UX Rules
+- Chat must not block editor interaction
+- Chat state is session-local (no persistence)
+- Messages are append-only
 
 ---
 
-## 🎨 UI CONSTRAINTS
+## 3️⃣ Context Injection
 
-- Minimal UI
-- No design system
-- No drag & drop
-- No persistence UI
+### Supported Context Types
+- Selected code (highest priority)
+- Active file content
+- File metadata:
+  - File name
+  - Language
+
+### Rules
+- Context is injected **explicitly**, never implicitly
+- Token usage must be bounded
+- If selection exists → ignore full file
+
+---
+
+## 4️⃣ Prompt Templates (Required)
+
+Implement the following **explicit templates**:
+
+### Explain Code
+- Goal: explain logic step-by-step
+- Must not suggest changes unless asked
+
+### Find Bugs
+- Goal: identify potential issues
+- Must not rewrite code
+- Must explain reasoning
+
+### Optimize Logic
+- Goal: suggest improvements
+- Suggestions must be descriptive only
+- No auto-apply
+
+Templates must:
+- Be visible to user
+- Be editable before sending
+
+---
+
+## 5️⃣ Server Execution Model
+
+### Interactive AI (NOW)
+Use **Server Actions or Hono streaming APIs** for:
+- AI chat
+- Prompt execution
+
+### Inngest Usage (LIMITED)
+- Do NOT use Inngest for live chat
+- ONLY scaffold:
+  - Event definition
+  - Future hook for long-running agent chat (commented)
+
+No background jobs yet.
+
+---
+
+## 6️⃣ Safety & Non-Destructive Rules
+
+- AI responses are **read-only**
+- No code changes
+- No file writes
+- No diff application
+- UI must clearly indicate:
+  > “AI suggestions are not automatically applied”
+
+---
+
+## 🧠 STATE MANAGEMENT
+
+- Keep chat state local to editor session
+- Use typed message interfaces:
+  - role: `user | assistant`
+  - content: string
+  - context metadata (optional)
 
 ---
 
 ## 🚫 OUT OF SCOPE (DO NOT IMPLEMENT)
 
-- Saving to backend
-- IndexedDB / localStorage
-- GitHub repositories
-- Authentication
-- AI features
-- Collaboration
+- Code auto-modification
+- Inline completions
+- Agent mode
+- Persistence
+- GitHub integration
+- Token usage analytics
+- Billing / limits UI
 
 ---
 
 ## 🧪 QUALITY REQUIREMENTS
 
-- TypeScript strict mode
+- TypeScript strict
 - No `any`
-- Clean interfaces:
-  - FileNode
-  - DirectoryNode
-  - Workspace
-- Comments for non-obvious logic
-- No dead code
+- Clear separation:
+  - UI
+  - Prompt logic
+  - AI provider
+- Comments for:
+  - Prompt design decisions
+  - Gemini quirks
 
 ---
 
 ## ✅ EXPECTED OUTPUT
 
 At the end of this phase:
-1. A project can be imported via ZIP
-2. Files and folders appear in the file explorer
-3. Editor reads/writes from VFS
-4. Project metadata is available
-5. Workspace layer is reusable for future phases
+1. Editor shows a side AI chat panel
+2. User can select code and ask:
+   - Explain
+   - Find bugs
+   - Optimize
+3. Gemini responses stream live
+4. No code is modified automatically
+5. Architecture is ready for agent mode later
 
 ---
 
 ## 🧠 FINAL INSTRUCTION
 
-Do **not** add persistence, GitHub logic, or editor features beyond what is required.
+This phase is about **trust and correctness**, not automation.
 
-This phase is **pure foundation** — optimize for clarity and extensibility.
+Implement **only what is required** and leave clear extension points for:
+- Agent mode
+- Inngest orchestration

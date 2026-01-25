@@ -110,3 +110,4 @@ export function isValidZipFile(file: File): boolean {
          file.name.toLowerCase().endsWith('.zip');
 }
 
+

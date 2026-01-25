@@ -14,4 +14,7 @@ app.onError(errorHandler);
 
 // Register routes
 import health from './routes/health';
+import { aiChatApp } from './routes/ai-chat';
+
 app.route('/health', health);
+app.route('/ai-chat', aiChatApp);

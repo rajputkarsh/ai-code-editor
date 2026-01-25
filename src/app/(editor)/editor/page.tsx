@@ -5,8 +5,15 @@ import { EditorLayout } from '../components/layout/EditorLayout';
 import { FileExplorer } from '../components/file-explorer/FileExplorer';
 import { EditorTabs } from '../components/editor/EditorTabs';
 import { CodeEditor } from '../components/editor/CodeEditor';
+import { AIChatPanel } from '../components/ai-chat';
 import { useEditorState } from '../stores/editor-state';
 import { useFileSystem } from '../stores/file-system';
+import { useAIChatState } from '../stores/ai-chat-state';
+import { useSelectionState } from '../stores/selection-state';
+import { MessageSquare } from 'lucide-react';
+import { PromptTemplate } from '@/lib/ai/prompt-templates';
+import { ChatContext } from '@/lib/ai/types';
+import { detectLanguage } from '@/lib/file-utils';
 
 const EditorArea = () => {
     const { activeTabId, activeSecondaryTabId, isSplit, tabs } = useEditorState();
@@ -60,10 +67,97 @@ const EditorArea = () => {
 };
 
 export default function EditorPage() {
+    const { addMessage, openPanel, setContextInfo, isPanelOpen } = useAIChatState();
+    const { activeTabId, tabs } = useEditorState();
+    const { files } = useFileSystem();
+    const { selection, hasSelection } = useSelectionState();
+
+    /**
+     * Handle template selection from AI chat panel
+     * This creates a chat context and sends the prompt
+     * Uses selection if available, otherwise uses full file
+     */
+    const handleTemplateSelect = (template: PromptTemplate) => {
+        // Get active file
+        const activeTab = tabs.find(t => t.id === activeTabId);
+        if (!activeTab) {
+            alert('Please open a file first');
+            return;
+        }
+
+        const activeFile = files[activeTab.fileId];
+        if (!activeFile) {
+            alert('No active file found');
+            return;
+        }
+
+        // Create context - use selection if available, otherwise full file
+        const context: ChatContext = {
+            fileId: activeFile.id,
+            fileName: activeFile.name,
+            content: activeFile.content || '',
+            language: detectLanguage(activeFile.name),
+        };
+
+        // Add selection info if available
+        if (hasSelection && selection && selection.fileId === activeFile.id) {
+            context.selection = {
+                text: selection.text,
+                startLine: selection.startLine,
+                endLine: selection.endLine,
+            };
+        }
+
+        // Generate prompt from template
+        const prompt = template.generatePrompt(context);
+
+        // Set context info with selection details
+        const contextInfoText = context.selection
+            ? `${activeFile.name}, lines ${context.selection.startLine}-${context.selection.endLine}`
+            : `${activeFile.name} (full file)`;
+        setContextInfo(contextInfoText);
+
+        // Add user message with metadata
+        addMessage({
+            role: 'user',
+            content: prompt,
+            contextMetadata: {
+                fileName: activeFile.name,
+                language: context.language,
+                isSelection: !!context.selection,
+                lineRange: context.selection
+                    ? {
+                          start: context.selection.startLine,
+                          end: context.selection.endLine,
+                      }
+                    : undefined,
+            },
+        });
+
+        // Open panel if not already open
+        openPanel();
+    };
+
     return (
         <EditorLayout
             sidebar={<FileExplorer />}
-            editor={<EditorArea />}
+            editor={
+                <div className="flex flex-col h-full">
+                    <EditorArea />
+                    {/* AI Chat Toggle Button */}
+                    {!isPanelOpen && (
+                        <button
+                            onClick={openPanel}
+                            className="fixed bottom-6 right-6 flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg shadow-lg transition-colors"
+                            title="Open AI Chat"
+                        >
+                            <MessageSquare className="w-4 h-4" />
+                            <span className="text-sm font-medium">AI Assistant</span>
+                        </button>
+                    )}
+                </div>
+            }
+            aiChat={<AIChatPanel onTemplateSelect={handleTemplateSelect} />}
         />
     );
 }

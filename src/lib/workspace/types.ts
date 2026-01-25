@@ -47,3 +47,4 @@ export interface VFSOperations {
   getNodePath: (id: string) => string;
 }
 
+

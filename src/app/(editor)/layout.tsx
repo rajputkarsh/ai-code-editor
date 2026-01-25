@@ -3,6 +3,8 @@
 import { WorkspaceProvider } from './stores/workspace-provider';
 import { FileSystemProvider } from './stores/file-system';
 import { EditorStateProvider } from './stores/editor-state';
+import { AIChatStateProvider } from './stores/ai-chat-state';
+import { SelectionStateProvider } from './stores/selection-state';
 
 export default function EditorRouteLayout({
     children,
@@ -13,7 +15,11 @@ export default function EditorRouteLayout({
         <WorkspaceProvider>
             <FileSystemProvider>
                 <EditorStateProvider>
-                    {children}
+                    <SelectionStateProvider>
+                        <AIChatStateProvider>
+                            {children}
+                        </AIChatStateProvider>
+                    </SelectionStateProvider>
                 </EditorStateProvider>
             </FileSystemProvider>
         </WorkspaceProvider>
