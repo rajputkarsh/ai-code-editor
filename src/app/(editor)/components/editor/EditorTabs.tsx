@@ -9,7 +9,7 @@ import { X, Columns, Loader2 } from 'lucide-react';
 export const EditorTabs = () => {
     const { tabs, activeTabId, setActiveTab, closeTab, isSplit, toggleSplit, activeSecondaryTabId, activePaneForFileOpen } = useEditorState();
     const { files } = useFileSystem();
-    const { autosaveState } = useWorkspace();
+    const { autosaveState, dirtyFiles } = useWorkspace();
 
     if (tabs.length === 0) return null;
 
@@ -52,13 +52,15 @@ export const EditorTabs = () => {
                         }
                     }
 
-                    // Save state indicator
+                    // Save state indicator (per-file)
                     let saveIndicator = null;
-                    if (autosaveState === 'pending') {
-                        // Unsaved changes - show filled dot
+                    const isFileDirty = dirtyFiles.has(file.id);
+                    
+                    if (isFileDirty && autosaveState === 'pending') {
+                        // This specific file has unsaved changes - show filled dot
                         saveIndicator = <span className="w-2 h-2 rounded-full bg-orange-400" title="Unsaved changes" />;
                     } else if (autosaveState === 'saving') {
-                        // Syncing - show spinning loader
+                        // Syncing - show spinning loader (global, during any save operation)
                         saveIndicator = <span title="Syncing..."><Loader2 size={12} className="animate-spin text-blue-400" /></span>;
                     }
                     // When synced or idle, show no indicator

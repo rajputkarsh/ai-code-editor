@@ -26,8 +26,8 @@ export const CodeEditor = ({ fileId }: CodeEditorProps) => {
     const handleEditorChange = (value: string | undefined) => {
         if (value !== undefined) {
             updateFileContent(fileId, value);
-            // Trigger autosave when file content changes
-            markDirty();
+            // Trigger autosave when file content changes (pass fileId to track dirty state)
+            markDirty('FILE_CONTENT_CHANGED', fileId);
         }
     };
 

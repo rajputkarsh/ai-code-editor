@@ -16,10 +16,11 @@ interface WorkspaceContextType {
   loadWorkspace: (workspace: Workspace) => void;
   updateWorkspaceName: (name: string) => void;
   saveWorkspace: (editorState?: EditorState) => Promise<void>;
-  markDirty: (eventType?: 'FILE_CONTENT_CHANGED' | 'FILE_CREATED' | 'FILE_RENAMED' | 'FILE_DELETED' | 'TAB_CHANGED' | 'LAYOUT_CHANGED') => void; // Trigger autosave
+  markDirty: (eventType?: 'FILE_CONTENT_CHANGED' | 'FILE_CREATED' | 'FILE_RENAMED' | 'FILE_DELETED' | 'TAB_CHANGED' | 'LAYOUT_CHANGED', fileId?: string) => void; // Trigger autosave
   getEditorStateCapture: (() => EditorState | undefined) | null; // Function to capture current editor state
   setEditorStateCapture: (fn: (() => EditorState | undefined) | null) => void; // Register editor state capture function
   autosaveState: AutosaveState; // Current autosave state for UI indicators
+  dirtyFiles: Set<string>; // Track which files have unsaved changes
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
@@ -39,6 +40,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   
   // Autosave state for UI indicators
   const [autosaveState, setAutosaveState] = useState<AutosaveState>('idle');
+  
+  // Track which files have unsaved changes
+  const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
 
   /**
    * Initialize autosave manager
@@ -67,6 +71,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     // Register state change callback for UI indicators
     autosaveManagerRef.current.onStateChange((state) => {
       setAutosaveState(state);
+      
+      // Clear dirty files when save completes
+      if (state === 'synced') {
+        setDirtyFiles(new Set());
+      }
     });
 
     // Cleanup on unmount
@@ -204,9 +213,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
    * Should be called after any file modification or editor state change.
    * 
    * @param eventType - Type of change that triggered the save
+   * @param fileId - Optional file ID for file-specific changes
    */
-  const markDirty = useCallback((eventType: 'FILE_CONTENT_CHANGED' | 'FILE_CREATED' | 'FILE_RENAMED' | 'FILE_DELETED' | 'TAB_CHANGED' | 'LAYOUT_CHANGED' = 'FILE_CONTENT_CHANGED') => {
+  const markDirty = useCallback((eventType: 'FILE_CONTENT_CHANGED' | 'FILE_CREATED' | 'FILE_RENAMED' | 'FILE_DELETED' | 'TAB_CHANGED' | 'LAYOUT_CHANGED' = 'FILE_CONTENT_CHANGED', fileId?: string) => {
     if (!workspace || !vfs || !autosaveManagerRef.current) return;
+
+    // Track dirty files for file-specific changes
+    if (fileId && (eventType === 'FILE_CONTENT_CHANGED' || eventType === 'FILE_CREATED' || eventType === 'FILE_RENAMED')) {
+      setDirtyFiles(prev => new Set(prev).add(fileId));
+    }
 
     const currentVfs = vfs.getStructure();
     
@@ -305,8 +320,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       getEditorStateCapture: editorStateCaptureFn,
       setEditorStateCapture: setEditorStateCaptureFn,
       autosaveState,
+      dirtyFiles,
     }),
-    [workspace, vfs, isLoading, error, importFromZip, createNewWorkspace, loadWorkspace, updateWorkspaceName, saveWorkspace, markDirty, editorStateCaptureFn, autosaveState]
+    [workspace, vfs, isLoading, error, importFromZip, createNewWorkspace, loadWorkspace, updateWorkspaceName, saveWorkspace, markDirty, editorStateCaptureFn, autosaveState, dirtyFiles]
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

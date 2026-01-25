@@ -83,7 +83,7 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
             setFiles(fileNodes);
             
             // Trigger autosave after creating file
-            markDirty();
+            markDirty('FILE_CREATED', newId);
         } else {
             // Fallback to old behavior
             const id = generateId();
@@ -128,8 +128,8 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
             
             setFiles(fileNodes);
             
-            // Trigger autosave after creating folder
-            markDirty();
+            // Trigger autosave after creating folder (folders don't need dirty tracking)
+            markDirty('FILE_CREATED');
         } else {
             // Fallback to old behavior
             const id = generateId();
@@ -173,7 +173,7 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
             setFiles(fileNodes);
             
             // Trigger autosave after deleting node
-            markDirty();
+            markDirty('FILE_DELETED');
         } else {
             // Fallback to old behavior
             setFiles((prev) => {
@@ -222,7 +222,7 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
             setFiles(fileNodes);
             
             // Trigger autosave after renaming node
-            markDirty();
+            markDirty('FILE_RENAMED', id);
         } else {
             // Fallback to old behavior
             setFiles((prev) => {
@@ -250,7 +250,7 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
             
             // Note: markDirty() is also called in CodeEditor, but we call it here
             // to ensure all file content updates trigger autosave
-            markDirty();
+            markDirty('FILE_CONTENT_CHANGED', id);
         } else {
             // Fallback to old behavior
             setFiles((prev) => ({
