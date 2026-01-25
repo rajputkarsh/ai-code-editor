@@ -65,7 +65,7 @@ interface FileTreeNodeProps {
 
 const FileTreeNode = ({ nodeId, onContextMenu }: FileTreeNodeProps) => {
     const { files } = useFileSystem();
-    const { openFile, activeTabId } = useEditorState();
+    const { openFile, activeTabId, tabs } = useEditorState();
     const node = files[nodeId];
     const [isOpen, setIsOpen] = useState(false);
 
@@ -80,13 +80,21 @@ const FileTreeNode = ({ nodeId, onContextMenu }: FileTreeNodeProps) => {
         }
     };
 
+    // Check if this file is currently active in the editor
+    const activeTab = tabs.find(t => t.id === activeTabId);
+    const isActiveFile = node.type === 'file' && activeTab && activeTab.fileId === node.id;
+
     // Adjust depth to account for hidden root (depth 0 = root, so we subtract 1)
     const displayDepth = Math.max(0, node.depth - 1);
 
     return (
         <div className="select-none">
             <div
-                className={`flex items-center gap-1 py-1 px-2 cursor-pointer hover:bg-neutral-800 text-sm`}
+                className={`flex items-center gap-1 py-1 px-2 cursor-pointer text-sm ${
+                    isActiveFile 
+                        ? 'bg-blue-600/20 text-white border-l-2 border-blue-500' 
+                        : 'hover:bg-neutral-800 text-neutral-300'
+                }`}
                 style={{ paddingLeft: `${displayDepth * 12 + 8}px` }}
                 onClick={handleToggle}
                 onContextMenu={(e) => onContextMenu(e, node.id)}
@@ -103,7 +111,7 @@ const FileTreeNode = ({ nodeId, onContextMenu }: FileTreeNodeProps) => {
                     getFileIcon(node.name)
                 )}
 
-                <span className="truncate text-neutral-300">{node.name}</span>
+                <span className="truncate">{node.name}</span>
             </div>
 
             {node.type === 'folder' && isOpen && node.children && (
