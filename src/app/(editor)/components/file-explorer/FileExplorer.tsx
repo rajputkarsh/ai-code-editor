@@ -80,11 +80,14 @@ const FileTreeNode = ({ nodeId, onContextMenu }: FileTreeNodeProps) => {
         }
     };
 
+    // Adjust depth to account for hidden root (depth 0 = root, so we subtract 1)
+    const displayDepth = Math.max(0, node.depth - 1);
+
     return (
         <div className="select-none">
             <div
                 className={`flex items-center gap-1 py-1 px-2 cursor-pointer hover:bg-neutral-800 text-sm`}
-                style={{ paddingLeft: `${node.depth * 12 + 8}px` }}
+                style={{ paddingLeft: `${displayDepth * 12 + 8}px` }}
                 onClick={handleToggle}
                 onContextMenu={(e) => onContextMenu(e, node.id)}
             >
@@ -175,6 +178,7 @@ export const FileExplorer = () => {
 
     // Global Create Buttons handlers (root)
     const handleRootAction = (type: 'file' | 'folder') => {
+        if (!rootId) return; // Can't create without a root
         setTargetNodeId(rootId);
         setModalType(type === 'file' ? 'create_file' : 'create_folder');
         setInputVal('');
@@ -185,22 +189,24 @@ export const FileExplorer = () => {
             {/* Header */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800 text-xs font-semibold text-neutral-400 uppercase tracking-wider">
                 <span>Files</span>
-                <div className="flex gap-1">
-                    <button
-                        onClick={(e) => { e.stopPropagation(); handleRootAction('file'); }}
-                        className="hover:text-white p-1"
-                        title="New File"
-                    >
-                        <FilePlus size={14} />
-                    </button>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); handleRootAction('folder'); }}
-                        className="hover:text-white p-1"
-                        title="New Folder"
-                    >
-                        <FolderPlus size={14} />
-                    </button>
-                </div>
+                {rootId && (
+                    <div className="flex gap-1">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); handleRootAction('file'); }}
+                            className="hover:text-white p-1"
+                            title="New File"
+                        >
+                            <FilePlus size={14} />
+                        </button>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); handleRootAction('folder'); }}
+                            className="hover:text-white p-1"
+                            title="New Folder"
+                        >
+                            <FolderPlus size={14} />
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Import Project Section */}
@@ -208,7 +214,19 @@ export const FileExplorer = () => {
 
             {/* Tree */}
             <div className="flex-1 overflow-y-auto py-2">
-                <FileTreeNode nodeId={rootId} onContextMenu={handleContextMenu} />
+                {rootId && files[rootId] ? (
+                    // Render children of root directly (skip the root node itself)
+                    <>
+                        {files[rootId].children?.map((childId) => (
+                            <FileTreeNode key={childId} nodeId={childId} onContextMenu={handleContextMenu} />
+                        ))}
+                    </>
+                ) : (
+                    <div className="px-3 py-6 text-center text-neutral-500 text-sm">
+                        <p>No files yet</p>
+                        <p className="text-xs text-neutral-600 mt-1">Create a file or folder to get started</p>
+                    </div>
+                )}
             </div>
 
             {/* Context Menu Overlay (Backdrop + Menu) */}
