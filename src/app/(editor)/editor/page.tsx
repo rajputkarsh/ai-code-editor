@@ -15,6 +15,7 @@ import { useSelectionState } from '../stores/selection-state';
 import { PromptTemplate } from '@/lib/ai/prompt-templates';
 import { ChatContext } from '@/lib/ai/types';
 import { detectLanguage } from '@/lib/file-utils';
+import { useEditorStatePersistence } from '../stores/editor-persistence';
 
 const EditorArea = () => {
     const { activeTabId, activeSecondaryTabId, isSplit, tabs, activePaneForFileOpen, setActivePaneForFileOpen } = useEditorState();
@@ -121,6 +122,9 @@ const EditorArea = () => {
 };
 
 export default function EditorPage() {
+    // Phase 1.5: Initialize editor state persistence (restores tabs, layout, etc.)
+    useEditorStatePersistence();
+
     // Panel visibility state (single source of truth)
     const [isFileExplorerOpen, setIsFileExplorerOpen] = useState(true);
     const [isAIChatOpen, setIsAIChatOpen] = useState(false);

@@ -16,7 +16,9 @@ interface WorkspaceContextType {
   loadWorkspace: (workspace: Workspace) => void;
   updateWorkspaceName: (name: string) => void;
   saveWorkspace: (editorState?: EditorState) => Promise<void>;
-  markDirty: () => void; // Trigger autosave
+  markDirty: (eventType?: 'FILE_CONTENT_CHANGED' | 'FILE_CREATED' | 'FILE_RENAMED' | 'FILE_DELETED' | 'TAB_CHANGED' | 'LAYOUT_CHANGED') => void; // Trigger autosave
+  getEditorStateCapture: (() => EditorState | undefined) | null; // Function to capture current editor state
+  setEditorStateCapture: (fn: (() => EditorState | undefined) | null) => void; // Register editor state capture function
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
@@ -30,6 +32,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   // Phase 1.6: Enhanced autosave using AutosaveManager
   const autosaveManagerRef = useRef<AutosaveManager | null>(null);
   const isRestoringRef = useRef(false);
+  
+  // Phase 1.5: Editor state capture function (set by editor-persistence hook)
+  const [editorStateCaptureFn, setEditorStateCaptureFn] = useState<(() => EditorState | undefined) | null>(null);
 
   /**
    * Initialize autosave manager
@@ -186,8 +191,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   /**
    * Mark workspace as dirty (needs saving)
    * 
-   * Phase 1.6: Triggers autosave using AutosaveManager.
-   * Should be called after any file modification.
+   * Phase 1.5/1.6: Triggers autosave using AutosaveManager.
+   * Should be called after any file modification or editor state change.
    * 
    * @param eventType - Type of change that triggered the save
    */
@@ -195,15 +200,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (!workspace || !vfs || !autosaveManagerRef.current) return;
 
     const currentVfs = vfs.getStructure();
+    
+    // Capture current editor state if capture function is registered
+    const currentEditorState = editorStateCaptureFn ? editorStateCaptureFn() : workspace.editorState;
+    
     autosaveManagerRef.current.trigger(
       {
         type: eventType,
         timestamp: Date.now(),
       },
       currentVfs,
-      workspace.editorState
+      currentEditorState
     );
-  }, [workspace, vfs]);
+  }, [workspace, vfs, editorStateCaptureFn]);
 
   /**
    * Import workspace from ZIP file
@@ -284,8 +293,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       updateWorkspaceName,
       saveWorkspace,
       markDirty,
+      getEditorStateCapture: editorStateCaptureFn,
+      setEditorStateCapture: setEditorStateCaptureFn,
     }),
-    [workspace, vfs, isLoading, error, importFromZip, createNewWorkspace, loadWorkspace, updateWorkspaceName, saveWorkspace, markDirty]
+    [workspace, vfs, isLoading, error, importFromZip, createNewWorkspace, loadWorkspace, updateWorkspaceName, saveWorkspace, markDirty, editorStateCaptureFn]
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
