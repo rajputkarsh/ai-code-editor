@@ -111,6 +111,136 @@ Deliver a functional **web-based code editor** with basic AI assistance.
 
 ---
 
+# PHASE 1.4: Authentication & Identity Foundation (Clerk)
+
+### Goal
+Establish **secure authentication and user identity** as foundational infrastructure using **Clerk**, without impacting core editor, AI, or workspace logic.
+
+This phase exists to:
+- Remove identity-related assumptions from future phases
+- Provide a stable `userId` for persistence, billing, and collaboration
+- Centralize access control and route protection
+
+---
+
+## 1.4.1 Authentication Provider
+
+### Provider
+- **Clerk** as the authentication and identity provider
+
+### Supported Sign-in Methods
+- GitHub SSO (required)
+- Google SSO (optional, enabled via Clerk)
+
+### Explicit Constraints
+- No custom authentication logic
+- No password management by the application
+- No email magic links beyond Clerk defaults
+
+---
+
+## 1.4.2 Clerk Setup & Configuration
+
+### Scope
+- Integrate Clerk with Next.js App Router
+- Configure Clerk middleware
+- Provide Clerk context at the application root
+
+### Environment Configuration
+- `CLERK_PUBLISHABLE_KEY`
+- `CLERK_SECRET_KEY`
+
+All authentication configuration must be centralized.
+
+---
+
+## 1.4.3 User Identity Model
+
+### Canonical User Identifier
+- Use Clerk-provided `userId` as the **single source of truth** for user identity
+
+### Scope
+- No custom user database table
+- User record created implicitly on first login
+- Identity accessible server-side via:
+  - Server Actions
+  - Hono APIs
+  - Middleware
+
+---
+
+## 1.4.4 Route Protection & Access Control
+
+### Access Rules
+
+| Route | Access Level |
+|---|---|
+| `/` | Public |
+| `/editor` | Authenticated users only |
+| `/api/*` | Authenticated users only (except future webhooks) |
+
+### Implementation
+- Middleware-based route protection
+- Centralized authorization logic
+- Predictable redirect behavior for unauthenticated users
+
+---
+
+## 1.4.5 Authentication Boundaries
+
+### Editor Isolation Rules
+- Editor components must not:
+  - Import Clerk directly
+  - Contain authentication logic
+- Editor assumes:
+  > “If rendered, the user is authenticated”
+
+### Server-Side Access
+- Authentication data accessed only via:
+  - Server Actions
+  - API handlers
+  - Middleware helpers
+
+---
+
+## 1.4.6 Minimal Authentication UI
+
+### Scope
+- Sign-in
+- Sign-out
+
+### Constraints
+- Use Clerk-provided UI components
+- Minimal styling
+- No onboarding flow
+- No account settings UI
+
+---
+
+## 1.4.7 Non-Goals
+
+This phase explicitly does **not** include:
+- Workspace persistence
+- Billing or subscriptions
+- Feature gating
+- Role-based access control
+- User profile editing
+- Account deletion
+- Team or organization management
+
+---
+
+## Phase Exit Criteria
+
+This phase is considered complete when:
+1. Users can authenticate via Clerk SSO
+2. Protected routes are inaccessible without login
+3. A stable `userId` is available server-side
+4. Editor logic remains auth-agnostic
+5. Identity foundation is ready for persistence and billing
+
+---
+
 # PHASE 1.5: Workspace Persistence & Cloud Sync
 
 ### Goal
