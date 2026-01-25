@@ -7,11 +7,13 @@
  * Features:
  * - Toggle file explorer visibility
  * - Toggle AI assistant panel visibility
+ * - User authentication menu (sign out)
  * - Clean, minimal design matching editor theme
  */
 
 import React from 'react';
 import { PanelLeft, MessageSquare } from 'lucide-react';
+import { UserButton } from '@/components/auth/UserButton';
 
 interface EditorToolbarProps {
     isFileExplorerOpen: boolean;
@@ -40,41 +42,48 @@ export function EditorToolbar({
                 </span>
             </div>
 
-            {/* Right section - Panel toggles */}
-            <div className="flex items-center gap-1">
-                {/* File Explorer Toggle */}
-                <button
-                    onClick={onFileExplorerToggle}
-                    className={`
-                        p-1 rounded-md
-                        transition-colors
-                        ${isFileExplorerOpen 
-                            ? 'bg-neutral-700 text-white' 
-                            : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                        }
-                    `}
-                    title={isFileExplorerOpen ? 'Hide file explorer' : 'Show file explorer'}
-                    aria-label={isFileExplorerOpen ? 'Hide file explorer' : 'Show file explorer'}
-                >
-                    <PanelLeft className="w-3 h-3" />
-                </button>
+            {/* Right section - Panel toggles and user menu */}
+            <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                    {/* File Explorer Toggle */}
+                    <button
+                        onClick={onFileExplorerToggle}
+                        className={`
+                            p-1 rounded-md
+                            transition-colors
+                            ${isFileExplorerOpen 
+                                ? 'bg-neutral-700 text-white' 
+                                : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                            }
+                        `}
+                        title={isFileExplorerOpen ? 'Hide file explorer' : 'Show file explorer'}
+                        aria-label={isFileExplorerOpen ? 'Hide file explorer' : 'Show file explorer'}
+                    >
+                        <PanelLeft className="w-3 h-3" />
+                    </button>
 
-                {/* AI Assistant Toggle */}
-                <button
-                    onClick={onAIChatToggle}
-                    className={`
-                        p-1 rounded-md
-                        transition-colors
-                        ${isAIChatOpen 
-                            ? 'bg-purple-600 text-white' 
-                            : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                        }
-                    `}
-                    title={isAIChatOpen ? 'Hide AI assistant' : 'Show AI assistant'}
-                    aria-label={isAIChatOpen ? 'Hide AI assistant' : 'Show AI assistant'}
-                >
-                    <MessageSquare className="w-3 h-3" />
-                </button>
+                    {/* AI Assistant Toggle */}
+                    <button
+                        onClick={onAIChatToggle}
+                        className={`
+                            p-1 rounded-md
+                            transition-colors
+                            ${isAIChatOpen 
+                                ? 'bg-purple-600 text-white' 
+                                : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                            }
+                        `}
+                        title={isAIChatOpen ? 'Hide AI assistant' : 'Show AI assistant'}
+                        aria-label={isAIChatOpen ? 'Hide AI assistant' : 'Show AI assistant'}
+                    >
+                        <MessageSquare className="w-3 h-3" />
+                    </button>
+                </div>
+
+                {/* User Menu - Sign out */}
+                <div className="ml-2 border-l border-neutral-700 pl-2">
+                    <UserButton />
+                </div>
             </div>
         </div>
     );

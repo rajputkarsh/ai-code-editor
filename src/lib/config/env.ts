@@ -4,6 +4,8 @@ const envSchema = z.object({
     APP_ENV: z.enum(['local', 'preview', 'production']).default('local'),
     DATABASE_URL: z.string().url().optional(), // Optional for now until DB is set up
     GEMINI_API_KEY: z.string().min(1, 'Gemini API key is required for AI chat functionality'),
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1, 'Clerk publishable key is required for authentication'),
+    CLERK_SECRET_KEY: z.string().min(1, 'Clerk secret key is required for authentication'),
     
     // AI Token Limits (with defaults)
     // These limits prevent runaway costs and abuse
@@ -16,8 +18,10 @@ const processEnv = {
     APP_ENV: process.env.APP_ENV,
     DATABASE_URL: process.env.DATABASE_URL,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-    
-    // Token limits - use env vars if provided, otherwise defaults from schema
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+    CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
+
+    // keys with default fallback values
     AI_MAX_TOKENS_PER_REQUEST: process.env.AI_MAX_TOKENS_PER_REQUEST,
     AI_MAX_INPUT_TOKENS: process.env.AI_MAX_INPUT_TOKENS,
     AI_MAX_TOKENS_PER_SESSION: process.env.AI_MAX_TOKENS_PER_SESSION,

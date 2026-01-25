@@ -1,21 +1,22 @@
-# Phase 4.4 – Non-Functional Scope Execution Prompt
+# Phase 1.4 – Authentication & Identity Foundation (Clerk) Execution Prompt
 
-You are a **senior frontend + platform engineer** implementing **Phase 4.4: Non-Functional Requirements** for a **Next.js (App Router) web-based code editor**.
+You are a **senior full-stack engineer** implementing **Phase 1.4: Authentication & Identity Foundation** for a **Next.js (App Router) web-based code editor**.
 
-This phase focuses on **responsiveness, performance, and safety limits** without introducing new product features.
+This phase uses **Clerk** for authentication and identity management.
 
-Follow all existing architectural constraints strictly.
+The goal is to establish **reliable user identity and route protection** without impacting editor, AI, or workspace logic.
 
 ---
 
 ## 🎯 PHASE GOAL
 
-Harden the editor so that it:
-- Works well across screen sizes
-- Loads fast and predictably
-- Enforces AI token usage limits to prevent abuse
+Introduce authentication such that:
+- Users can sign in using SSO
+- A stable `userId` is available server-side
+- Protected routes cannot be accessed anonymously
+- Core editor logic remains auth-agnostic
 
-No new editor features should be introduced.
+This phase must create a **clean identity boundary** for all future phases.
 
 ---
 
@@ -23,94 +24,112 @@ No new editor features should be introduced.
 
 ---
 
-## 1️⃣ Responsive UI
+## 1️⃣ Authentication Provider: Clerk
 
 ### Requirements
-- Editor layout must adapt to:
-  - Desktop
-  - Tablet
-  - Small laptop screens
-- Core areas:
-  - File explorer
-  - Editor panes
-  - AI chat panel
-
-### Behavior
-- Side panels must be collapsible
-- Editor always retains usable minimum width
-- Split views must stack or collapse on small screens
+- Use **Clerk** as the authentication provider
+- Enable SSO-based authentication:
+  - GitHub (required)
+  - Google (optional, but supported)
+- Use Clerk’s **Next.js App Router integration**
 
 ### Constraints
-- No new design system
-- No pixel-perfect polish
-- Functional responsiveness only
+- No custom auth implementation
+- No passwords managed by us
+- No email magic links (unless enabled by Clerk defaults)
 
 ---
 
-## 2️⃣ Fast Editor Load
+## 2️⃣ Clerk Setup & Configuration
 
-### Requirements
-Optimize initial load so:
-- Editor shell renders immediately
-- Monaco loads lazily
-- Heavy modules are code-split
-
-### Implementation Rules
-- Use dynamic imports for:
-  - Monaco editor
-  - AI chat panel
-- Avoid blocking server components
-- Defer non-critical JS
-
-### Performance Targets (Soft)
-- First meaningful paint < 2s (dev environment)
-- Monaco loaded only when editor is visible
-
----
-
-## 3️⃣ Token Usage Limits (AI Safety)
-
-### Scope
-Introduce **basic token usage controls** for AI chat to prevent runaway costs and abuse.
+### Tasks
+- Install Clerk SDK for Next.js
+- Configure:
+  - Clerk middleware
+  - Clerk provider at app root
+- Environment variables:
+  - `CLERK_PUBLISHABLE_KEY`
+  - `CLERK_SECRET_KEY`
 
 ### Rules
-- Hard per-request token cap
-- Hard per-session token cap
-- Graceful failure when limits are exceeded
-
-### Behavior
-- UI shows:
-  - “Token limit reached” message
-- No retries
-- No partial responses beyond limit
-
-### Technical Notes
-- Token limits enforced server-side
-- Client must not be trusted
-- Limits should be configurable via env variables
+- All auth config must be centralized
+- No auth logic inside editor components
 
 ---
 
-## 🧠 ARCHITECTURAL RULES
+## 3️⃣ User Identity Model
 
-- No business logic in UI components
-- Performance optimizations must be:
-  - Commented
-  - Measurable
-- Token logic must be:
-  - Centralized
-  - Provider-agnostic (Gemini-aware, not Gemini-dependent)
+### Requirements
+- Use Clerk’s `userId` as the **canonical user identifier**
+- Do NOT create a custom user table yet
+- Identity must be accessible in:
+  - Server Actions
+  - Hono APIs
+  - Middleware
+
+### Helper Pattern
+- Create a server-side helper to fetch:
+  - `userId`
+  - basic user metadata (optional)
+- Do not expose Clerk SDK directly everywhere
+
+---
+
+## 4️⃣ Route Protection
+
+### Protected Routes
+| Route | Access |
+|---|---|
+| `/editor` | Authenticated users only |
+| `/api/*` | Authenticated users only |
+| `/` | Public |
+
+### Implementation Rules
+- Use Clerk middleware for protection
+- Redirect unauthenticated users to sign-in
+- Avoid duplicating auth checks in components
+
+---
+
+## 5️⃣ Minimal Auth UI
+
+### Required Screens
+- Sign in
+- Sign out
+
+### UI Rules
+- Use Clerk-provided components
+- Minimal styling
+- No onboarding flow
+- No account settings page yet
+
+---
+
+## 6️⃣ Auth Boundary Rules (CRITICAL)
+
+### Editor Isolation
+- Editor components must:
+  - Never import Clerk directly
+  - Never check auth state themselves
+- Editor should assume:
+  > “If rendered, the user is authenticated”
+
+### Server-Side Access
+- Auth data accessed only via:
+  - Server Actions
+  - API handlers
+  - Middleware
 
 ---
 
 ## 🚫 OUT OF SCOPE (DO NOT IMPLEMENT)
 
-- UI theming
-- Dark mode
-- Detailed performance analytics
-- User-visible token counters
-- Billing enforcement
-- Rate limiting across users
+- Workspace persistence
+- Billing or subscriptions
+- Feature gating
+- Roles or permissions
+- User profile editing
+- Account deletion
 
 ---
 
@@ -118,26 +137,28 @@ Introduce **basic token usage controls** for AI chat to prevent runaway costs an
 
 - TypeScript strict
 - No `any`
-- Clear separation of concerns
-- Comments explaining:
-  - Why something is lazy-loaded
-  - Why token limits are chosen
+- Auth logic centralized
+- Clear comments explaining:
+  - Why Clerk is isolated
+  - How `userId` flows server-side
 
 ---
 
 ## ✅ EXPECTED OUTPUT
 
 At the end of this phase:
-1. Editor layout works on multiple screen sizes
-2. Initial load is noticeably faster
-3. Monaco is lazily loaded
-4. AI chat enforces token limits safely
-5. No regressions in editor behavior
+1. Users can sign in via Clerk (SSO)
+2. `/editor` is fully protected
+3. Server-side code can reliably access `userId`
+4. Editor logic has zero auth coupling
+5. Foundation is ready for workspace persistence
 
 ---
 
 ## 🧠 FINAL INSTRUCTION
 
-This phase is about **making the product feel solid**, not flashy.
+This phase exists to **eliminate assumptions** in future phases.
 
-Do not introduce new features or abstractions beyond what is required to meet the non-functional goals.
+Do not add persistence, billing, or feature gating.
+
+If something feels “useful later,” leave a comment — do not implement it now.
