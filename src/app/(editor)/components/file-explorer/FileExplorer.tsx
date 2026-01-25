@@ -3,8 +3,59 @@
 import React, { useState } from 'react';
 import { useFileSystem } from '@/app/(editor)/stores/file-system';
 import { useEditorState } from '@/app/(editor)/stores/editor-state';
-import { ChevronRight, ChevronDown, File, Folder, Trash2, Edit2, FilePlus, FolderPlus } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, Folder, Trash2, Edit2, FilePlus, FolderPlus, FileJson, FileCode, FileImage, FileText, Layout, Box, Terminal, Settings } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
+
+const getFileIcon = (filename: string) => {
+    const extension = filename.split('.').pop()?.toLowerCase();
+    switch (extension) {
+        case 'json':
+            return <FileJson size={14} className="text-yellow-400" />;
+        case 'ts':
+        case 'tsx':
+        case 'js':
+        case 'jsx':
+            return <FileCode size={14} className="text-blue-400" />;
+        case 'css':
+        case 'scss':
+        case 'less':
+            return <Layout size={14} className="text-blue-300" />;
+        case 'py':
+            return <FileCode size={14} className="text-yellow-500" />;
+        case 'java':
+        case 'class':
+        case 'jar':
+            return <FileCode size={14} className="text-red-500" />;
+        case 'c':
+        case 'cpp':
+        case 'h':
+        case 'hpp':
+            return <FileCode size={14} className="text-blue-600" />;
+        case 'swift':
+            return <FileCode size={14} className="text-orange-500" />;
+        case 'go':
+            return <FileCode size={14} className="text-cyan-500" />;
+        case 'rs':
+            return <FileCode size={14} className="text-orange-600" />;
+        case 'sql':
+            return <FileCode size={14} className="text-purple-400" />;
+        case 'xml':
+        case 'yaml':
+        case 'yml':
+            return <FileCode size={14} className="text-purple-300" />;
+        case 'md':
+        case 'txt':
+            return <FileText size={14} className="text-gray-400" />;
+        case 'png':
+        case 'jpg':
+        case 'jpeg':
+        case 'gif':
+        case 'svg':
+            return <FileImage size={14} className="text-green-400" />;
+        default:
+            return <File size={14} className="text-neutral-400" />;
+    }
+};
 
 interface FileTreeNodeProps {
     nodeId: string;
@@ -45,7 +96,7 @@ const FileTreeNode = ({ nodeId, onContextMenu }: FileTreeNodeProps) => {
                 {node.type === 'folder' ? (
                     <Folder size={14} className="text-blue-400" />
                 ) : (
-                    <File size={14} className="text-neutral-400" />
+                    getFileIcon(node.name)
                 )}
 
                 <span className="truncate text-neutral-300">{node.name}</span>
