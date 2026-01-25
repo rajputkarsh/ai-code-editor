@@ -1,5 +1,6 @@
 'use client';
 
+import { WorkspaceProvider } from './stores/workspace-provider';
 import { FileSystemProvider } from './stores/file-system';
 import { EditorStateProvider } from './stores/editor-state';
 
@@ -9,10 +10,12 @@ export default function EditorRouteLayout({
     children: React.ReactNode;
 }) {
     return (
-        <FileSystemProvider>
-            <EditorStateProvider>
-                {children}
-            </EditorStateProvider>
-        </FileSystemProvider>
+        <WorkspaceProvider>
+            <FileSystemProvider>
+                <EditorStateProvider>
+                    {children}
+                </EditorStateProvider>
+            </FileSystemProvider>
+        </WorkspaceProvider>
     );
 }

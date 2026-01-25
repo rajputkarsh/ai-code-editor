@@ -1,143 +1,150 @@
-# Phase 4.1 – Core Editor Execution Prompt
+# Phase 4.2 – Project Workspace Execution Prompt
 
-You are a **senior frontend engineer** implementing **Phase 4.1: Core Editor** for a **Next.js (App Router) web-based code editor**.
+You are a **senior full-stack engineer** implementing **Phase 4.2: Project Workspace** for a **Next.js (App Router) web-based code editor**.
 
-Follow the existing repository architecture and constraints strictly.
+This phase focuses on **project-level state and virtual file system foundations** that the editor will operate on.
+
+Follow existing repository structure and constraints strictly.
 
 ---
 
 ## 🎯 PHASE GOAL
 
-Implement the **core in-browser code editor experience**, including:
-- Monaco Editor integration
-- Syntax highlighting
-- File explorer
-- Tabs & split views
-- In-file search
+Implement a **project workspace layer** that:
+- Can import a project via ZIP
+- Maintains a virtual file system in memory
+- Tracks basic project metadata
 
-This phase must be **fully functional**, but **not over-engineered**.
+This workspace will be consumed by the editor, file explorer, and future GitHub / persistence layers.
 
 ---
 
 ## 🧱 SCOPE (ONLY THIS PHASE)
 
-### 1. Monaco Editor Integration
-- Use `@monaco-editor/react`
-- Editor must:
-  - Load dynamically (no SSR issues)
-  - Support multiple languages
-  - Be reusable as a component
+---
 
-- Place editor components under: /app/(editor)/components/editor
-### 2. Language & Syntax Highlighting
-Enable syntax highlighting for:
-- JavaScript
-- TypeScript
-- Python
-- HTML
-- CSS
+## 1️⃣ Project Import (ZIP)
 
-Language must be:
-- Auto-detected by file extension
-- Explicitly set on editor mount
+### Requirements
+- Allow user to upload a `.zip` file
+- Extract contents in-browser
+- Populate virtual file system from ZIP structure
+
+### Constraints
+- No backend persistence
+- No GitHub integration
+- Assume trusted input (basic validation only)
+
+### UX
+- Simple “Import Project” action
+- Loading state during extraction
+- Error handling for invalid ZIPs
 
 ---
 
-### 3. File Explorer
-Implement a **basic file explorer UI** with:
-- Folder & file tree
-- Actions:
-- Create file
-- Rename file
-- Delete file
-- State-driven (no backend yet)
-- File system lives **in memory** for now
+## 2️⃣ Virtual File System (VFS)
 
+### Requirements
+Implement an **in-memory virtual file system** that supports:
+- Nested folders and files
+- File content as string
+- Basic operations:
+  - Read file
+  - Write file
+  - Create file
+  - Rename file
+  - Delete file
+  - List directory contents
 
+### Design Rules
+- VFS must be **framework-agnostic**
+- No DOM or UI dependencies
+- Must be usable by:
+  - File Explorer
+  - Editor
+  - Future GitHub sync
+  - Future persistence layer
 
-- Place file explorer components under: /app/(editor)/components/file-explorer
+### Location
+Place VFS logic under:
+
+/lib/workspace
 
 ---
 
-### 4. Tabs & Split Views
-Implement:
-- Multiple open file tabs
-- Switch between tabs
-- Close tabs
-- Simple horizontal split view (max 2 editors)
+## 3️⃣ Project Metadata
 
-No persistence required yet.
+### Required Metadata
+Track the following:
+- Project ID (UUID)
+- Project name
+- Import source (ZIP / future GitHub)
+- Created timestamp
+- Last opened timestamp
 
----
-
-### 5. In-File Search
-- Implement search within the current file
-- Use Monaco’s built-in find widget
-- Keyboard shortcut support (`Ctrl/Cmd + F`)
+### Behavior
+- Metadata stored alongside workspace state
+- Metadata accessible via workspace context
 
 ---
 
 ## 🧠 STATE MANAGEMENT RULES
 
-- Use React state (no Redux / Zustand yet)
-- Keep state colocated
-- Use clear, typed interfaces for:
-  - File
-  - Folder
-  - Editor tab
-  - Editor pane
+- Use React context to expose:
+  - Workspace
+  - VFS operations
+  - Metadata
+- Avoid global stores
+- Keep state colocated and typed
 
 ---
 
-## 🎨 UI & UX CONSTRAINTS
+## 🎨 UI CONSTRAINTS
 
-- Minimal, clean UI
-- Functional > beautiful
-- No design system yet
-- Use basic CSS or existing global styles
-- Avoid premature styling decisions
+- Minimal UI
+- No design system
+- No drag & drop
+- No persistence UI
 
 ---
 
 ## 🚫 OUT OF SCOPE (DO NOT IMPLEMENT)
 
-- GitHub integration
-- Persistence (IndexedDB / backend)
-- AI features
+- Saving to backend
+- IndexedDB / localStorage
+- GitHub repositories
 - Authentication
+- AI features
 - Collaboration
-- Drag & drop
-- File icons library
 
 ---
 
 ## 🧪 QUALITY REQUIREMENTS
 
-- TypeScript strict compliance
+- TypeScript strict mode
 - No `any`
-- Clear component boundaries
-- Comments where logic is non-obvious
+- Clean interfaces:
+  - FileNode
+  - DirectoryNode
+  - Workspace
+- Comments for non-obvious logic
 - No dead code
 
 ---
 
 ## ✅ EXPECTED OUTPUT
 
-At the end of this phase, I should be able to:
-1. Open `/editor`
-2. See a file explorer on the left
-3. Create and open files
-4. Edit files with syntax highlighting
-5. Switch tabs
-6. Split editor view
-7. Search within a file
+At the end of this phase:
+1. A project can be imported via ZIP
+2. Files and folders appear in the file explorer
+3. Editor reads/writes from VFS
+4. Project metadata is available
+5. Workspace layer is reusable for future phases
 
 ---
 
 ## 🧠 FINAL INSTRUCTION
 
-Do **not** jump ahead to future phases.
+Do **not** add persistence, GitHub logic, or editor features beyond what is required.
 
-Implement **only what is required for Phase 4.1** and explain any trade-offs briefly in comments if needed.
-
-
+This phase is **pure foundation** — optimize for clarity and extensibility.

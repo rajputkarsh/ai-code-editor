@@ -5,6 +5,7 @@ import { useFileSystem } from '@/app/(editor)/stores/file-system';
 import { useEditorState } from '@/app/(editor)/stores/editor-state';
 import { ChevronRight, ChevronDown, File, Folder, Trash2, Edit2, FilePlus, FolderPlus, FileJson, FileCode, FileImage, FileText, Layout, Box, Terminal, Settings } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
+import { ImportProject } from './ImportProject';
 
 const getFileIcon = (filename: string) => {
     const extension = filename.split('.').pop()?.toLowerCase();
@@ -201,6 +202,9 @@ export const FileExplorer = () => {
                     </button>
                 </div>
             </div>
+
+            {/* Import Project Section */}
+            <ImportProject />
 
             {/* Tree */}
             <div className="flex-1 overflow-y-auto py-2">
