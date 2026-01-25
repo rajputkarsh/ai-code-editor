@@ -186,7 +186,7 @@ export class VirtualFileSystem {
     let currentId: string | null = id;
 
     while (currentId) {
-      const node = this.nodes[currentId];
+      const node: VFSNode | undefined = this.nodes[currentId];
       if (!node) break;
 
       if (currentId !== this.rootId) {
