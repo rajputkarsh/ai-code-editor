@@ -61,7 +61,7 @@ export const EditorTabs = () => {
                         saveIndicator = <span className="w-2 h-2 rounded-full bg-orange-400" title="Unsaved changes" />;
                     } else if (autosaveState === 'saving') {
                         // Syncing - show spinning loader (global, during any save operation)
-                        saveIndicator = <span title="Syncing..."><Loader2 size={12} className="animate-spin text-blue-400" /></span>;
+                        saveIndicator = <></>;
                     }
                     // When synced or idle, show no indicator
 
