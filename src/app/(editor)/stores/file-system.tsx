@@ -16,7 +16,21 @@ interface FileSystemContextType {
 const FileSystemContext = createContext<FileSystemContextType | undefined>(undefined);
 
 export function FileSystemProvider({ children }: { children: React.ReactNode }) {
-    const [files, setFiles] = useState<Record<string, FileNode>>({});
+    const [files, setFiles] = useState<Record<string, FileNode>>(() => {
+        // Initialize with a root folder and a sample file
+        const rootId = 'root';
+
+        return {
+            [rootId]: {
+                id: rootId,
+                name: 'Project',
+                type: 'folder',
+                parentId: null,
+                children: [],
+                depth: 0,
+            },
+        };
+    });
 
     const rootId = 'root';
 
