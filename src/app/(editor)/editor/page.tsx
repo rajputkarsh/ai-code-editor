@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { EditorLayout } from '../components/layout/EditorLayout';
 import { EditorToolbar } from '../components/layout/EditorToolbar';
+import { EditorBottomBar } from '../components/layout/EditorBottomBar';
 import { FileExplorer } from '../components/file-explorer/FileExplorer';
 import { EditorTabs } from '../components/editor/EditorTabs';
 import { LazyCodeEditor } from '../components/editor/LazyCodeEditor';
@@ -208,6 +209,8 @@ export default function EditorPage() {
                         onAIChatToggle={() => setIsAIChatOpen(!isAIChatOpen)}
                     />
                     <EditorArea />
+                    {/* VS Code-style Bottom Bar */}
+                    <EditorBottomBar />
                 </div>
             }
             aiChat={isAIChatOpen && (
