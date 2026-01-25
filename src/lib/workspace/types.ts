@@ -28,11 +28,52 @@ export interface WorkspaceMetadata {
   source: WorkspaceSource;
   createdAt: Date;
   lastOpenedAt: Date;
+  userId?: string; // Owner of the workspace (for cloud persistence)
 }
 
+/**
+ * Editor state that needs to be persisted
+ * Captures the current editor configuration and open files
+ */
+export interface EditorState {
+  openTabs: Array<{
+    id: string;
+    fileId: string;
+  }>;
+  activeTabId: string | null;
+  activeSecondaryTabId: string | null;
+  isSplit: boolean;
+  cursorPosition?: {
+    fileId: string;
+    line: number;
+    column: number;
+  };
+}
+
+/**
+ * Complete workspace state for persistence
+ * Includes file system, editor state, and metadata
+ */
 export interface Workspace {
   metadata: WorkspaceMetadata;
   vfs: VFSStructure;
+  editorState?: EditorState;
+}
+
+/**
+ * Serializable workspace data for database storage
+ * All Date fields converted to ISO strings for JSON serialization
+ */
+export interface SerializedWorkspace {
+  id: string;
+  userId: string;
+  name: string;
+  source: WorkspaceSource;
+  vfsData: string; // JSON string of VFSStructure
+  editorStateData: string | null; // JSON string of EditorState
+  createdAt: string; // ISO date string
+  lastOpenedAt: string; // ISO date string
+  updatedAt: string; // ISO date string
 }
 
 export interface VFSOperations {

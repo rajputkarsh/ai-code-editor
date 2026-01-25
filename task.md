@@ -1,22 +1,21 @@
-# Phase 1.4 – Authentication & Identity Foundation (Clerk) Execution Prompt
+# Phase 1.5 – Workspace Persistence & Cloud Sync Execution Prompt
 
-You are a **senior full-stack engineer** implementing **Phase 1.4: Authentication & Identity Foundation** for a **Next.js (App Router) web-based code editor**.
+You are a **senior full-stack engineer** implementing **Phase 1.5: Workspace Persistence & Cloud Sync** for a **Next.js (App Router) web-based code editor**.
 
-This phase uses **Clerk** for authentication and identity management.
+Authentication is already implemented using **Clerk**.
 
-The goal is to establish **reliable user identity and route protection** without impacting editor, AI, or workspace logic.
+This phase introduces **cloud-backed workspace persistence** as **product infrastructure** and must not leak into core editor or AI logic.
 
 ---
 
 ## 🎯 PHASE GOAL
 
-Introduce authentication such that:
-- Users can sign in using SSO
-- A stable `userId` is available server-side
-- Protected routes cannot be accessed anonymously
-- Core editor logic remains auth-agnostic
+Enable authenticated users to:
+- Save workspace state to the server
+- Restore workspace state on reload or login
+- Access the same workspace across devices
 
-This phase must create a **clean identity boundary** for all future phases.
+All workspace data must be **scoped to the authenticated user**.
 
 ---
 
@@ -24,112 +23,128 @@ This phase must create a **clean identity boundary** for all future phases.
 
 ---
 
-## 1️⃣ Authentication Provider: Clerk
+## 1️⃣ Authentication & Identity (Given)
 
-### Requirements
-- Use **Clerk** as the authentication provider
-- Enable SSO-based authentication:
-  - GitHub (required)
-  - Google (optional, but supported)
-- Use Clerk’s **Next.js App Router integration**
+### Assumptions (Now Explicit)
+- Clerk authentication is live
+- A stable `userId` is available server-side
+- All workspace data is user-owned
+
+Do NOT modify authentication logic in this phase.
+
+---
+
+## 2️⃣ Workspace Persistence Model
+
+### Persist the Following State
+- Virtual file system:
+  - Folder structure
+  - File names
+  - File contents (text only)
+- Editor state:
+  - Open tabs
+  - Active file
+  - Cursor position
+  - Editor layout (single / split)
+
+### Design Requirements
+- Workspace state must be:
+  - Serializable
+  - Deterministic
+  - Forward-compatible
+
+---
+
+## 3️⃣ Data Storage Strategy (Initial)
+
+### Architecture
+- Backend-managed persistence
+- Use database storage for:
+  - Workspace metadata
+  - File tree structure
+- Store file contents:
+  - Inline for small text files
+  - No binary assets
+
+### Notes
+- Optimize for correctness and simplicity
+- Multi-workspace support required
+
+---
+
+## 4️⃣ Workspace APIs (Hono)
+
+### API Responsibilities
+- Create workspace
+- Load workspace
+- Save workspace
+- List user workspaces
 
 ### Constraints
-- No custom auth implementation
-- No passwords managed by us
-- No email magic links (unless enabled by Clerk defaults)
+- APIs must:
+  - Require authentication
+  - Validate workspace ownership
+- Implement APIs using **Hono**
+- Place under:
+/app/api/workspace/*
 
 ---
 
-## 2️⃣ Clerk Setup & Configuration
+## 5️⃣ Autosave & Restore Behavior
 
-### Tasks
-- Install Clerk SDK for Next.js
-- Configure:
-  - Clerk middleware
-  - Clerk provider at app root
-- Environment variables:
-  - `CLERK_PUBLISHABLE_KEY`
-  - `CLERK_SECRET_KEY`
+### Autosave
+- Triggered on:
+- File content changes
+- Tab changes
+- Layout changes
+- Writes must be:
+- Debounced
+- Non-blocking
 
-### Rules
-- All auth config must be centralized
-- No auth logic inside editor components
+### Restore
+- On editor load:
+- Fetch last opened workspace
+- Hydrate workspace state
+- Optimistic hydration allowed
 
 ---
 
-## 3️⃣ User Identity Model
+## 6️⃣ Editor Integration Rules (CRITICAL)
+
+- Editor components must:
+- Read from workspace context only
+- Never call persistence APIs directly
+- Persistence logic must live in:
+/lib/workspace/persistence
+
+
+Editor behavior must remain unchanged.
+
+---
+
+## 7️⃣ State Management
 
 ### Requirements
-- Use Clerk’s `userId` as the **canonical user identifier**
-- Do NOT create a custom user table yet
-- Identity must be accessible in:
-  - Server Actions
-  - Hono APIs
-  - Middleware
+- Workspace context exposes:
+- Current workspace
+- Load / save handlers
+- Persistence is:
+- Side-effect driven
+- Transparent to UI
 
-### Helper Pattern
-- Create a server-side helper to fetch:
-  - `userId`
-  - basic user metadata (optional)
-- Do not expose Clerk SDK directly everywhere
-
----
-
-## 4️⃣ Route Protection
-
-### Protected Routes
-| Route | Access |
-|---|---|
-| `/editor` | Authenticated users only |
-| `/api/*` | Authenticated users only |
-| `/` | Public |
-
-### Implementation Rules
-- Use Clerk middleware for protection
-- Redirect unauthenticated users to sign-in
-- Avoid duplicating auth checks in components
-
----
-
-## 5️⃣ Minimal Auth UI
-
-### Required Screens
-- Sign in
-- Sign out
-
-### UI Rules
-- Use Clerk-provided components
-- Minimal styling
-- No onboarding flow
-- No account settings page yet
-
----
-
-## 6️⃣ Auth Boundary Rules (CRITICAL)
-
-### Editor Isolation
-- Editor components must:
-  - Never import Clerk directly
-  - Never check auth state themselves
-- Editor should assume:
-  > “If rendered, the user is authenticated”
-
-### Server-Side Access
-- Auth data accessed only via:
-  - Server Actions
-  - API handlers
-  - Middleware
+Avoid global stores and tight coupling.
 
 ---
 
 ## 🚫 OUT OF SCOPE (DO NOT IMPLEMENT)
 
-- Workspace persistence
-- Billing or subscriptions
-- Feature gating
-- Roles or permissions
-- User profile editing
-- Account deletion
+- GitHub repository sync
+- Real-time collaboration
+- Conflict resolution UI
+- Offline-first behavior
+- Version history UI
+- Storage quota enforcement UI
+- Billing or plan-based limits
 
 ---
 
@@ -137,28 +152,32 @@ This phase must create a **clean identity boundary** for all future phases.
 
 - TypeScript strict
 - No `any`
-- Auth logic centralized
-- Clear comments explaining:
-  - Why Clerk is isolated
-  - How `userId` flows server-side
+- Explicit data models:
+- Workspace
+- FileNode
+- EditorState
+- Clear serialization boundaries
+- Comments explaining:
+- Autosave debounce strategy
+- Restore flow assumptions
 
 ---
 
 ## ✅ EXPECTED OUTPUT
 
 At the end of this phase:
-1. Users can sign in via Clerk (SSO)
-2. `/editor` is fully protected
-3. Server-side code can reliably access `userId`
-4. Editor logic has zero auth coupling
-5. Foundation is ready for workspace persistence
+1. Authenticated users have one or more saved workspaces
+2. Workspace state persists across reloads
+3. Workspaces load correctly on new devices
+4. Editor functionality is unchanged
+5. Persistence logic is isolated and reusable
 
 ---
 
 ## 🧠 FINAL INSTRUCTION
 
-This phase exists to **eliminate assumptions** in future phases.
+This phase is **product infrastructure**, not UX or editor logic.
 
-Do not add persistence, billing, or feature gating.
+Do not introduce collaboration, GitHub sync, or billing logic.
 
-If something feels “useful later,” leave a comment — do not implement it now.
+If a future concern arises, leave a comment — do not implement ahead of scope.

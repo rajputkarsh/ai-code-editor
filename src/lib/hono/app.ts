@@ -25,6 +25,8 @@ app.onError(errorHandler);
 // Register routes
 import health from './routes/health';
 import { aiChatApp } from './routes/ai-chat';
+import { workspaceApp } from './routes/workspace';
 
 app.route('/health', health);
 app.route('/ai-chat', aiChatApp);
+app.route('/workspace', workspaceApp);

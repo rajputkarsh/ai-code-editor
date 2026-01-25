@@ -3,9 +3,9 @@ import { z } from 'zod';
 const envSchema = z.object({
     APP_ENV: z.enum(['local', 'preview', 'production']).default('local'),
     DATABASE_URL: z.string().url().optional(), // Optional for now until DB is set up
-    GEMINI_API_KEY: z.string().min(1, 'Gemini API key is required for AI chat functionality'),
+    GEMINI_API_KEY: z.string().min(1, 'Gemini API key is required for AI chat functionality').optional(),
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1, 'Clerk publishable key is required for authentication'),
-    CLERK_SECRET_KEY: z.string().min(1, 'Clerk secret key is required for authentication'),
+    CLERK_SECRET_KEY: z.string().min(1, 'Clerk secret key is required for authentication').optional(),
     
     // AI Token Limits (with defaults)
     // These limits prevent runaway costs and abuse

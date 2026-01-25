@@ -8,4 +8,6 @@ export * from './vfs';
 export * from './zip-importer';
 export * from './workspace-factory';
 export * from './sample-project';
+export * from './persistence';
+export * from './api-client';
 

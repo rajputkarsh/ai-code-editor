@@ -4,6 +4,7 @@ import React, { useRef } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { useFileSystem } from '@/app/(editor)/stores/file-system';
 import { useSelectionState } from '@/app/(editor)/stores/selection-state';
+import { useWorkspace } from '@/app/(editor)/stores/workspace-provider';
 import { detectLanguage } from '@/lib/file-utils';
 import type { editor as MonacoEditor } from 'monaco-editor';
 
@@ -14,6 +15,7 @@ interface CodeEditorProps {
 export const CodeEditor = ({ fileId }: CodeEditorProps) => {
     const { files, updateFileContent } = useFileSystem();
     const { setSelection, clearSelection } = useSelectionState();
+    const { markDirty } = useWorkspace();
     const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
     const file = files[fileId];
 
@@ -24,6 +26,8 @@ export const CodeEditor = ({ fileId }: CodeEditorProps) => {
     const handleEditorChange = (value: string | undefined) => {
         if (value !== undefined) {
             updateFileContent(fileId, value);
+            // Trigger autosave when file content changes
+            markDirty();
         }
     };
 
