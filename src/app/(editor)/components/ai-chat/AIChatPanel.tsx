@@ -5,7 +5,7 @@
  * Main AI chat panel with collapsible sidebar
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { useAIChatState } from '../../stores/ai-chat-state';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -37,18 +37,29 @@ export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom when new messages arrive
+    // Auto-scroll to bottom when messages change
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, streamingMessage]);
 
+    // Track if we're already processing to avoid duplicates
+    const processingRef = useRef(false);
+    const lastProcessedCountRef = useRef(0);
+
     // Handle sending a message
-    const handleSendMessage = async (content: string) => {
-        // Add user message
+    const handleSendMessage = useCallback(async (content: string, skipAddingMessage = false) => {
+        // Add user message (unless it's already been added, e.g., by template)
         const userMessage: ChatMessageType = {
             role: 'user',
             content,
         };
-        addMessage(userMessage);
+        
+        if (!skipAddingMessage) {
+            addMessage(userMessage);
+        }
+
+        // Get the current messages (including the one we just added or that was added by template)
+        const currentMessages = skipAddingMessage ? messages : [...messages, userMessage];
 
         // Start streaming
         startStreaming();
@@ -61,7 +72,7 @@ export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    messages: [...messages, userMessage],
+                    messages: currentMessages,
                 }),
             });
 
@@ -136,12 +147,44 @@ export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
                 content: `[ERROR] ${errorMessage}`,
             });
         }
-    };
+    }, [messages, addMessage, startStreaming, setStreamingMessage, finishStreaming]);
+
+    // Auto-send when a new user message is added (from templates)
+    useEffect(() => {
+        // Skip if already processing or streaming
+        if (processingRef.current || isStreaming) {
+            return;
+        }
+
+        // Check if there's a new user message that hasn't been processed
+        if (messages.length > lastProcessedCountRef.current) {
+            const lastMessage = messages[messages.length - 1];
+            
+            // If the last message is from user and we're not streaming, send it
+            if (lastMessage.role === 'user') {
+                processingRef.current = true;
+                lastProcessedCountRef.current = messages.length;
+                
+                // Trigger the send with a slight delay to ensure state is settled
+                setTimeout(() => {
+                    handleSendMessage(lastMessage.content, true);
+                    processingRef.current = false;
+                }, 50);
+            } else {
+                // It's an assistant message, just update the counter
+                lastProcessedCountRef.current = messages.length;
+            }
+        }
+    }, [messages, isStreaming, handleSendMessage]);
 
     const handleTemplateSelect = (template: PromptTemplate) => {
+        // Call the parent handler to generate the prompt with context
         if (onTemplateSelect) {
             onTemplateSelect(template);
         }
+        
+        // Note: The parent handler will add the message to state,
+        // and we'll detect it in useEffect to trigger sending
     };
 
     const handleClearChat = () => {
