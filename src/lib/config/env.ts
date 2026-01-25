@@ -12,6 +12,11 @@ const envSchema = z.object({
     AI_MAX_TOKENS_PER_REQUEST: z.coerce.number().positive().default(10000),
     AI_MAX_INPUT_TOKENS: z.coerce.number().positive().default(8000),
     AI_MAX_TOKENS_PER_SESSION: z.coerce.number().positive().default(50000),
+
+    // Workspace Limits (Phase 1.6 - Storage & Persistence)
+    // These limits enforce storage quotas per user and prevent abuse
+    WORKSPACE_MAX_COUNT_PER_USER: z.coerce.number().positive().default(10),
+    WORKSPACE_MAX_STORAGE_BYTES: z.coerce.number().positive().default(100 * 1024 * 1024), // 100MB default
 });
 
 const processEnv = {
@@ -25,6 +30,10 @@ const processEnv = {
     AI_MAX_TOKENS_PER_REQUEST: process.env.AI_MAX_TOKENS_PER_REQUEST,
     AI_MAX_INPUT_TOKENS: process.env.AI_MAX_INPUT_TOKENS,
     AI_MAX_TOKENS_PER_SESSION: process.env.AI_MAX_TOKENS_PER_SESSION,
+
+    // Workspace limits
+    WORKSPACE_MAX_COUNT_PER_USER: process.env.WORKSPACE_MAX_COUNT_PER_USER,
+    WORKSPACE_MAX_STORAGE_BYTES: process.env.WORKSPACE_MAX_STORAGE_BYTES,
 };
 
 // Parse and validate environment variables

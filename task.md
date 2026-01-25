@@ -1,21 +1,28 @@
-# Phase 1.5 – Workspace Persistence & Cloud Sync Execution Prompt
+# Phase 1.6 – Storage, Autosave, Sync & GitHub Interop Execution Prompt
 
-You are a **senior full-stack engineer** implementing **Phase 1.5: Workspace Persistence & Cloud Sync** for a **Next.js (App Router) web-based code editor**.
+You are a **senior backend + platform engineer** implementing **Phase 1.6** of a **Next.js (App Router) web-based code editor**.
 
-Authentication is already implemented using **Clerk**.
+Authentication (Clerk) and basic workspace persistence already exist.
 
-This phase introduces **cloud-backed workspace persistence** as **product infrastructure** and must not leak into core editor or AI logic.
+This phase hardens persistence with:
+- A concrete storage strategy
+- Autosave & draft recovery
+- Cross-device sync
+- GitHub interoperability rules
+- API & security enforcement
+
+This phase is **pure infrastructure** and must not affect editor UX or introduce new UI.
 
 ---
 
 ## 🎯 PHASE GOAL
 
-Enable authenticated users to:
-- Save workspace state to the server
-- Restore workspace state on reload or login
-- Access the same workspace across devices
-
-All workspace data must be **scoped to the authenticated user**.
+Ensure workspace data is:
+- Stored safely and predictably
+- Recoverable after crashes or reloads
+- Consistent across devices
+- Securely isolated per user
+- Ready for future billing limits
 
 ---
 
@@ -23,128 +30,150 @@ All workspace data must be **scoped to the authenticated user**.
 
 ---
 
-## 1️⃣ Authentication & Identity (Given)
+## 1️⃣ Storage Strategy (Initial)
 
-### Assumptions (Now Explicit)
-- Clerk authentication is live
-- A stable `userId` is available server-side
-- All workspace data is user-owned
-
-Do NOT modify authentication logic in this phase.
-
----
-
-## 2️⃣ Workspace Persistence Model
-
-### Persist the Following State
-- Virtual file system:
-  - Folder structure
-  - File names
-  - File contents (text only)
-- Editor state:
-  - Open tabs
-  - Active file
-  - Cursor position
-  - Editor layout (single / split)
-
-### Design Requirements
-- Workspace state must be:
-  - Serializable
-  - Deterministic
-  - Forward-compatible
-
----
-
-## 3️⃣ Data Storage Strategy (Initial)
-
-### Architecture
+### Architecture Requirements
 - Backend-managed persistence
-- Use database storage for:
+- Database used for:
   - Workspace metadata
   - File tree structure
-- Store file contents:
-  - Inline for small text files
-  - No binary assets
+  - Editor state
+- File contents:
+  - Stored in database (text only)
+  - No binary or large files
 
-### Notes
-- Optimize for correctness and simplicity
-- Multi-workspace support required
+### Design Constraints
+- Optimize for simplicity over scale
+- Prefer a **single database** initially
+- No object storage abstraction required yet
+
+### Explicit Non-Goals
+- Binary assets
+- Large file streaming
+- Version history storage
 
 ---
 
-## 4️⃣ Workspace APIs (Hono)
+## 2️⃣ Autosave Implementation
+
+### Autosave Triggers
+Autosave must trigger on:
+- File content edits
+- File create / rename / delete
+- Tab changes
+- Editor layout changes
+
+### Behavior
+- Debounced server writes
+- Non-blocking UI
+- Always store a **last-known-good state**
+
+### Technical Rules
+- Autosave logic lives in:
+/lib/workspace/autosave
+
+- Autosave must:
+- Be resilient to rapid changes
+- Never block typing
+- Never spam the API
+
+---
+
+## 3️⃣ Draft Recovery
+
+### Recovery Scenarios
+Restore unsaved changes after:
+- Page reload
+- Browser crash
+- Network failure
+
+### Recovery Rules
+- On editor load:
+- Fetch latest persisted workspace
+- Hydrate editor state automatically
+- No user prompt required
+- Recovery must be silent and deterministic
+
+---
+
+## 4️⃣ Cross-Device Sync
+
+### Scope
+- User logs in on a different device
+- Most recently saved workspace state is loaded
+- Single source of truth per workspace
+
+### Rules
+- Server state always wins
+- No merge logic
+- No conflict resolution UI
+
+### Explicitly Out of Scope
+- Real-time multi-device sync
+- Concurrent editing detection
+
+---
+
+## 5️⃣ GitHub Interoperability Rules
+
+### GitHub-Linked Projects
+- GitHub repository is the source of truth
+- Cloud workspace tracks:
+- Local uncommitted changes
+- Editor state
+- No automatic push to GitHub
+- No background syncing
+
+### Non-GitHub Projects
+- Cloud workspace is the source of truth
+- Persistence behaves exactly as defined above
+
+---
+
+## 6️⃣ APIs & Security (Hono)
+
+### API Requirements
+- All persistence APIs implemented using **Hono**
+- All routes must:
+- Require authentication (Clerk)
+- Enforce workspace ownership
+- Workspace ID must always be validated against `userId`
 
 ### API Responsibilities
-- Create workspace
-- Load workspace
-- Save workspace
-- List user workspaces
-
-### Constraints
-- APIs must:
-  - Require authentication
-  - Validate workspace ownership
-- Implement APIs using **Hono**
-- Place under:
-/app/api/workspace/*
+- Save workspace snapshot
+- Load workspace snapshot
+- List workspaces
+- Enforce limits
 
 ---
 
-## 5️⃣ Autosave & Restore Behavior
+## 7️⃣ Security & Limits (Infrastructure Only)
 
-### Autosave
-- Triggered on:
-- File content changes
-- Tab changes
-- Layout changes
-- Writes must be:
-- Debounced
-- Non-blocking
+### Security
+- Strict per-user data isolation
+- No cross-user access possible
+- All reads and writes are user-scoped
 
-### Restore
-- On editor load:
-- Fetch last opened workspace
-- Hydrate workspace state
-- Optimistic hydration allowed
+### Limits (Enforced Server-Side)
+- Maximum number of workspaces per user
+- Maximum total storage per user
 
----
-
-## 6️⃣ Editor Integration Rules (CRITICAL)
-
-- Editor components must:
-- Read from workspace context only
-- Never call persistence APIs directly
-- Persistence logic must live in:
-/lib/workspace/persistence
-
-
-Editor behavior must remain unchanged.
-
----
-
-## 7️⃣ State Management
-
-### Requirements
-- Workspace context exposes:
-- Current workspace
-- Load / save handlers
-- Persistence is:
-- Side-effect driven
-- Transparent to UI
-
-Avoid global stores and tight coupling.
+### Notes
+- Limits enforced silently
+- No UI for limits in this phase
+- No billing integration yet
 
 ---
 
 ## 🚫 OUT OF SCOPE (DO NOT IMPLEMENT)
 
-- GitHub repository sync
+- GitHub push / pull
 - Real-time collaboration
-- Conflict resolution UI
-- Offline-first behavior
+- Conflict resolution
 - Version history UI
-- Storage quota enforcement UI
-- Billing or plan-based limits
+- Offline-first behavior
+- Storage analytics UI
+- Billing logic or Stripe integration
 
 ---
 
@@ -152,32 +181,35 @@ Avoid global stores and tight coupling.
 
 - TypeScript strict
 - No `any`
-- Explicit data models:
+- Clear data models:
 - Workspace
 - FileNode
 - EditorState
-- Clear serialization boundaries
-- Comments explaining:
+- Explicit comments explaining:
 - Autosave debounce strategy
-- Restore flow assumptions
+- Recovery guarantees
+- GitHub vs cloud source-of-truth rules
 
 ---
 
 ## ✅ EXPECTED OUTPUT
 
 At the end of this phase:
-1. Authenticated users have one or more saved workspaces
-2. Workspace state persists across reloads
-3. Workspaces load correctly on new devices
-4. Editor functionality is unchanged
-5. Persistence logic is isolated and reusable
+1. Workspace data is stored using a defined strategy
+2. Autosave is reliable and non-intrusive
+3. Drafts recover automatically after crashes/reloads
+4. Workspaces sync correctly across devices
+5. GitHub-linked and non-GitHub projects behave predictably
+6. APIs are secure and user-scoped
+7. Foundation is ready for billing & collaboration
 
 ---
 
 ## 🧠 FINAL INSTRUCTION
 
-This phase is **product infrastructure**, not UX or editor logic.
+This phase is about **correctness and safety**, not features.
 
-Do not introduce collaboration, GitHub sync, or billing logic.
+Do not add UI, collaboration, or GitHub automation.
 
-If a future concern arises, leave a comment — do not implement ahead of scope.
+If a future need is identified, document it in comments — do not implement early.
+

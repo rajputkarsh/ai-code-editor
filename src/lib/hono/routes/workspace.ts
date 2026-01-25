@@ -27,12 +27,17 @@ import {
   deleteWorkspace,
   getLastOpenedWorkspace,
 } from '@/lib/workspace/persistence';
+import {
+  StorageLimitExceededError,
+  WorkspaceCountLimitExceededError,
+} from '@/lib/workspace/persistence/storage-utils';
 import type { VFSStructure, EditorState, Workspace } from '@/lib/workspace/types';
 
 export const workspaceApp = new Hono();
 
 /**
  * Schema for creating a new workspace
+ * Phase 1.6: Added GitHub metadata support
  */
 const createWorkspaceSchema = z.object({
   id: z.string().uuid(),
@@ -55,6 +60,12 @@ const createWorkspaceSchema = z.object({
       line: z.number(),
       column: z.number(),
     }).optional(),
+  }).optional(),
+  githubMetadata: z.object({
+    repositoryUrl: z.string().url(),
+    branch: z.string(),
+    lastSyncedCommit: z.string().optional(),
+    lastSyncedAt: z.string().datetime().optional(),
   }).optional(),
 });
 
@@ -96,6 +107,8 @@ function getUserId(c: Context): string {
 /**
  * POST /workspace
  * Create a new workspace
+ * 
+ * Phase 1.6: Enforces workspace count and storage limits
  */
 workspaceApp.post(
   '/',
@@ -105,6 +118,16 @@ workspaceApp.post(
       const userId = getUserId(c);
       const data = c.req.valid('json');
 
+      // Convert GitHub metadata dates from strings to Date objects
+      const githubMetadata = data.githubMetadata ? {
+        repositoryUrl: data.githubMetadata.repositoryUrl,
+        branch: data.githubMetadata.branch,
+        lastSyncedCommit: data.githubMetadata.lastSyncedCommit,
+        lastSyncedAt: data.githubMetadata.lastSyncedAt 
+          ? new Date(data.githubMetadata.lastSyncedAt) 
+          : undefined,
+      } : undefined;
+
       const workspace: Workspace = {
         metadata: {
           id: data.id,
@@ -113,6 +136,7 @@ workspaceApp.post(
           createdAt: new Date(),
           lastOpenedAt: new Date(),
           userId,
+          githubMetadata,
         },
         vfs: data.vfs as VFSStructure,
         editorState: data.editorState as EditorState | undefined,
@@ -129,6 +153,32 @@ workspaceApp.post(
 
       return c.json({ id: workspaceId }, 201);
     } catch (error) {
+      // Phase 1.6: Handle limit errors with appropriate status codes
+      if (error instanceof WorkspaceCountLimitExceededError) {
+        return c.json(
+          { 
+            error: error.message,
+            code: 'WORKSPACE_COUNT_LIMIT_EXCEEDED',
+            currentCount: error.currentCount,
+            maxCount: error.maxCount,
+          },
+          429 // Too Many Requests
+        );
+      }
+
+      if (error instanceof StorageLimitExceededError) {
+        return c.json(
+          {
+            error: error.message,
+            code: 'STORAGE_LIMIT_EXCEEDED',
+            currentSize: error.currentSize,
+            attemptedSize: error.attemptedSize,
+            maxSize: error.maxSize,
+          },
+          413 // Payload Too Large
+        );
+      }
+
       console.error('Error creating workspace:', error);
       return c.json(
         { error: 'Failed to create workspace' },
@@ -163,6 +213,8 @@ workspaceApp.get('/:id', async (c) => {
 /**
  * PUT /workspace/:id
  * Update an existing workspace
+ * 
+ * Phase 1.6: Enforces storage limits on updates
  */
 workspaceApp.put(
   '/:id',
@@ -182,6 +234,20 @@ workspaceApp.put(
 
       return c.json({ success: true });
     } catch (error) {
+      // Phase 1.6: Handle storage limit errors
+      if (error instanceof StorageLimitExceededError) {
+        return c.json(
+          {
+            error: error.message,
+            code: 'STORAGE_LIMIT_EXCEEDED',
+            currentSize: error.currentSize,
+            attemptedSize: error.attemptedSize,
+            maxSize: error.maxSize,
+          },
+          413 // Payload Too Large
+        );
+      }
+
       console.error('Error updating workspace:', error);
       return c.json({ error: 'Failed to update workspace' }, 500);
     }

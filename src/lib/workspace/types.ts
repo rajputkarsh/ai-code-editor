@@ -22,6 +22,21 @@ export interface VFSStructure {
 
 export type WorkspaceSource = 'zip' | 'github' | 'manual';
 
+/**
+ * GitHub repository metadata for GitHub-linked workspaces
+ * 
+ * Phase 1.6 GitHub Interoperability Rules:
+ * - For GitHub-linked projects, the GitHub repository is the source of truth
+ * - Cloud workspace tracks local uncommitted changes and editor state
+ * - No automatic push or background syncing
+ */
+export interface GitHubMetadata {
+  repositoryUrl: string;
+  branch: string;
+  lastSyncedCommit?: string; // SHA of last synced commit
+  lastSyncedAt?: Date;
+}
+
 export interface WorkspaceMetadata {
   id: string;
   name: string;
@@ -29,6 +44,7 @@ export interface WorkspaceMetadata {
   createdAt: Date;
   lastOpenedAt: Date;
   userId?: string; // Owner of the workspace (for cloud persistence)
+  githubMetadata?: GitHubMetadata; // Only present for GitHub-linked workspaces
 }
 
 /**

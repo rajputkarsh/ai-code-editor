@@ -1,0 +1,1 @@
+ALTER TABLE "workspaces" ADD COLUMN "github_metadata" jsonb;

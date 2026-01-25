@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Workspace, VirtualFileSystem, importZipFile, createEmptyWorkspace } from '@/lib/workspace';
 import { createWorkspaceAPI, updateWorkspaceAPI, getLatestWorkspaceAPI } from '@/lib/workspace/api-client';
+import { createAutosaveManager, type AutosaveManager } from '@/lib/workspace/autosave';
 import type { EditorState } from '@/lib/workspace/types';
 
 interface WorkspaceContextType {
@@ -20,32 +21,56 @@ interface WorkspaceContextType {
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
-/**
- * Debounce delay for autosave (in milliseconds)
- * 
- * This delay prevents excessive API calls during rapid file edits.
- * Autosave is triggered after the user stops making changes for this duration.
- */
-const AUTOSAVE_DEBOUNCE_MS = 2000;
-
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [vfs, setVfs] = useState<VirtualFileSystem | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isDirty, setIsDirty] = useState(false);
   
-  // Refs for autosave logic
-  const autosaveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isSavingRef = useRef(false);
+  // Phase 1.6: Enhanced autosave using AutosaveManager
+  const autosaveManagerRef = useRef<AutosaveManager | null>(null);
   const isRestoringRef = useRef(false);
+
+  /**
+   * Initialize autosave manager
+   * 
+   * Phase 1.6: Creates AutosaveManager instance when workspace is loaded.
+   */
+  useEffect(() => {
+    if (!workspace || !vfs) return;
+
+    // Create autosave manager with callback
+    const autosaveCallback = async (vfsStructure: any, editorState?: EditorState) => {
+      try {
+        await updateWorkspaceAPI(workspace.metadata.id, vfsStructure, editorState);
+        console.log('[Autosave] Saved workspace:', workspace.metadata.name);
+      } catch (err) {
+        console.error('[Autosave] Failed to save workspace:', err);
+        throw err;
+      }
+    };
+
+    autosaveManagerRef.current = createAutosaveManager(autosaveCallback, {
+      debounceMs: 2000,
+      verbose: false,
+    });
+
+    // Cleanup on unmount
+    return () => {
+      if (autosaveManagerRef.current) {
+        autosaveManagerRef.current.destroy();
+        autosaveManagerRef.current = null;
+      }
+    };
+  }, [workspace, vfs]);
 
   /**
    * Restore workspace on mount
    * 
+   * Phase 1.6 Draft Recovery:
    * Automatically loads the most recently opened workspace when the editor loads.
    * If no workspace exists, creates a new default workspace.
-   * This provides a seamless experience across sessions and devices.
+   * This provides seamless experience across sessions and devices.
    */
   useEffect(() => {
     const restoreWorkspace = async () => {
@@ -58,13 +83,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         const latestWorkspace = await getLatestWorkspaceAPI();
         
         if (latestWorkspace) {
-          console.log('Restored workspace:', latestWorkspace.metadata.name);
+          console.log('[Phase 1.6] Restored workspace:', latestWorkspace.metadata.name);
           setWorkspace(latestWorkspace);
           const vfsInstance = new VirtualFileSystem(latestWorkspace.vfs);
           setVfs(vfsInstance);
         } else {
           // No workspace exists - create a new default workspace
-          console.log('No workspace found, creating new workspace...');
+          console.log('[Phase 1.6] No workspace found, creating new workspace...');
           const newWorkspace = createEmptyWorkspace('My Project');
           setWorkspace(newWorkspace);
           const vfsInstance = new VirtualFileSystem(newWorkspace.vfs);
@@ -78,13 +103,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
               source: newWorkspace.metadata.source,
               vfs: newWorkspace.vfs,
             });
-            console.log('Created new workspace:', newWorkspace.metadata.name);
+            console.log('[Phase 1.6] Created new workspace:', newWorkspace.metadata.name);
           } catch (saveErr) {
-            console.warn('Failed to save new workspace (will try on first edit):', saveErr);
+            console.warn('[Phase 1.6] Failed to save new workspace (will try on first edit):', saveErr);
           }
         }
       } catch (err) {
-        console.warn('Failed to restore workspace:', err);
+        console.warn('[Phase 1.6] Failed to restore workspace:', err);
         // Create a fallback workspace even if API fails
         const fallbackWorkspace = createEmptyWorkspace('My Project');
         setWorkspace(fallbackWorkspace);
@@ -99,58 +124,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     restoreWorkspace();
   }, []); // Run only once on mount
 
-  /**
-   * Autosave effect
-   * 
-   * Debounced autosave: waits for AUTOSAVE_DEBOUNCE_MS of inactivity before saving.
-   * This prevents excessive API calls during rapid edits.
-   */
-  useEffect(() => {
-    if (!isDirty || !workspace || !vfs) {
-      return;
-    }
-
-    // Clear existing timer
-    if (autosaveTimerRef.current) {
-      clearTimeout(autosaveTimerRef.current);
-    }
-
-    // Set new timer for debounced save
-    autosaveTimerRef.current = setTimeout(async () => {
-      if (isSavingRef.current) return;
-
-      isSavingRef.current = true;
-      try {
-        const currentVfs = vfs.getStructure();
-        await updateWorkspaceAPI(workspace.metadata.id, currentVfs, workspace.editorState);
-        setIsDirty(false);
-        console.log('Autosaved workspace:', workspace.metadata.name);
-      } catch (err) {
-        console.error('Autosave failed:', err);
-        // Keep isDirty true to retry on next change
-      } finally {
-        isSavingRef.current = false;
-      }
-    }, AUTOSAVE_DEBOUNCE_MS);
-
-    // Cleanup timer on unmount or dependency change
-    return () => {
-      if (autosaveTimerRef.current) {
-        clearTimeout(autosaveTimerRef.current);
-      }
-    };
-  }, [isDirty, workspace, vfs]);
 
   /**
    * Manual save workspace
    * 
+   * Phase 1.6: Uses AutosaveManager for force save.
    * Can be called explicitly (e.g., on Cmd+S or before navigation).
    * Also used after creating a new workspace.
    */
   const saveWorkspace = useCallback(async (editorState?: EditorState) => {
-    if (!workspace || !vfs || isSavingRef.current) return;
+    if (!workspace || !vfs) return;
 
-    isSavingRef.current = true;
     setError(null);
 
     try {
@@ -178,39 +162,48 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           throw new Error(result.error);
         }
 
-        console.log('Created new workspace:', workspace.metadata.name);
+        console.log('[Phase 1.6] Created new workspace:', workspace.metadata.name);
       } else {
-        // Existing workspace - update it
-        await updateWorkspaceAPI(
-          workspace.metadata.id,
-          currentVfs,
-          editorState
-        );
-        console.log('Updated workspace:', workspace.metadata.name);
+        // Existing workspace - use autosave manager for force save
+        if (autosaveManagerRef.current) {
+          await autosaveManagerRef.current.forceSave(currentVfs, editorState);
+        } else {
+          // Fallback if autosave manager not initialized
+          await updateWorkspaceAPI(workspace.metadata.id, currentVfs, editorState);
+        }
+        console.log('[Phase 1.6] Saved workspace:', workspace.metadata.name);
       }
-
-      setIsDirty(false);
       
       // Update local workspace state with editor state
       setWorkspace(workspaceToSave);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to save workspace';
       setError(errorMessage);
-      console.error('Save error:', err);
-    } finally {
-      isSavingRef.current = false;
+      console.error('[Phase 1.6] Save error:', err);
     }
   }, [workspace, vfs]);
 
   /**
    * Mark workspace as dirty (needs saving)
    * 
-   * This triggers the autosave debounce timer.
+   * Phase 1.6: Triggers autosave using AutosaveManager.
    * Should be called after any file modification.
+   * 
+   * @param eventType - Type of change that triggered the save
    */
-  const markDirty = useCallback(() => {
-    setIsDirty(true);
-  }, []);
+  const markDirty = useCallback((eventType: 'FILE_CONTENT_CHANGED' | 'FILE_CREATED' | 'FILE_RENAMED' | 'FILE_DELETED' | 'TAB_CHANGED' | 'LAYOUT_CHANGED' = 'FILE_CONTENT_CHANGED') => {
+    if (!workspace || !vfs || !autosaveManagerRef.current) return;
+
+    const currentVfs = vfs.getStructure();
+    autosaveManagerRef.current.trigger(
+      {
+        type: eventType,
+        timestamp: Date.now(),
+      },
+      currentVfs,
+      workspace.editorState
+    );
+  }, [workspace, vfs]);
 
   /**
    * Import workspace from ZIP file

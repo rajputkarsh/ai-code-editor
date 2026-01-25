@@ -15,15 +15,84 @@ import { eq, and, desc } from 'drizzle-orm';
 import { getDb, schema } from '@/lib/db';
 import { Workspace, VFSStructure, EditorState } from '../types';
 import { serializeVFS, serializeEditorState } from './serialization';
+import {
+  calculateVFSSize,
+  isWithinStorageLimit,
+  StorageLimitExceededError,
+  WorkspaceCountLimitExceededError,
+} from './storage-utils';
+import { env } from '@/lib/config/env';
 
 const { workspaces: workspacesTable } = schema;
 
 /**
+ * Get total storage used by a user across all workspaces
+ * 
+ * Used for enforcing per-user storage limits (Phase 1.6).
+ * 
+ * @param userId - Clerk user ID
+ * @returns Total storage in bytes
+ */
+async function getUserTotalStorage(userId: string): Promise<number> {
+  const db = getDb();
+  if (!db) return 0;
+
+  try {
+    const userWorkspaces = await db
+      .select({ vfsData: workspacesTable.vfsData })
+      .from(workspacesTable)
+      .where(eq(workspacesTable.userId, userId));
+
+    let totalSize = 0;
+    for (const ws of userWorkspaces) {
+      totalSize += calculateVFSSize(ws.vfsData as VFSStructure);
+    }
+
+    return totalSize;
+  } catch (error) {
+    console.error('Failed to calculate user storage:', error);
+    return 0;
+  }
+}
+
+/**
+ * Get workspace count for a user
+ * 
+ * Used for enforcing per-user workspace count limits (Phase 1.6).
+ * 
+ * @param userId - Clerk user ID
+ * @returns Number of workspaces
+ */
+async function getUserWorkspaceCount(userId: string): Promise<number> {
+  const db = getDb();
+  if (!db) return 0;
+
+  try {
+    const result = await db
+      .select({ id: workspacesTable.id })
+      .from(workspacesTable)
+      .where(eq(workspacesTable.userId, userId));
+
+    return result.length;
+  } catch (error) {
+    console.error('Failed to count user workspaces:', error);
+    return 0;
+  }
+}
+
+/**
  * Create a new workspace in the database
+ * 
+ * Phase 1.6 Enhancements:
+ * - Enforces workspace count limit per user
+ * - Enforces storage limit per user
+ * - Validates GitHub metadata if present
  * 
  * @param userId - Clerk user ID (workspace owner)
  * @param workspace - Workspace object to persist
  * @returns The created workspace ID, or null if database is not configured
+ * @throws {WorkspaceCountLimitExceededError} If user has too many workspaces
+ * @throws {StorageLimitExceededError} If workspace would exceed storage limit
  */
 export async function createWorkspace(
   userId: string,
@@ -33,6 +102,27 @@ export async function createWorkspace(
   if (!db) return null;
 
   try {
+    // Phase 1.6: Enforce workspace count limit
+    const currentCount = await getUserWorkspaceCount(userId);
+    if (currentCount >= env.WORKSPACE_MAX_COUNT_PER_USER) {
+      throw new WorkspaceCountLimitExceededError(
+        currentCount,
+        env.WORKSPACE_MAX_COUNT_PER_USER
+      );
+    }
+
+    // Phase 1.6: Enforce storage limit
+    const workspaceSize = calculateVFSSize(workspace.vfs);
+    const currentStorage = await getUserTotalStorage(userId);
+    
+    if (!isWithinStorageLimit(currentStorage, workspaceSize, env.WORKSPACE_MAX_STORAGE_BYTES)) {
+      throw new StorageLimitExceededError(
+        currentStorage,
+        workspaceSize,
+        env.WORKSPACE_MAX_STORAGE_BYTES
+      );
+    }
+
     const result = await db
       .insert(workspacesTable)
       .values({
@@ -42,6 +132,7 @@ export async function createWorkspace(
         source: workspace.metadata.source,
         vfsData: serializeVFS(workspace.vfs),
         editorStateData: workspace.editorState ? serializeEditorState(workspace.editorState) : null,
+        githubMetadata: workspace.metadata.githubMetadata || null,
         createdAt: workspace.metadata.createdAt,
         lastOpenedAt: workspace.metadata.lastOpenedAt,
         updatedAt: new Date(),
@@ -50,6 +141,12 @@ export async function createWorkspace(
 
     return result[0].id;
   } catch (error) {
+    // Re-throw custom errors
+    if (error instanceof WorkspaceCountLimitExceededError || 
+        error instanceof StorageLimitExceededError) {
+      throw error;
+    }
+    
     console.error('Failed to create workspace:', error);
     throw new Error('Failed to create workspace');
   }
@@ -58,6 +155,11 @@ export async function createWorkspace(
 /**
  * Update an existing workspace
  * 
+ * Phase 1.6 Enhancements:
+ * - Enforces storage limit when updating
+ * - Calculates size delta (new size - old size)
+ * - Only checks limit if workspace is growing
+ * 
  * Only updates VFS and editor state. Does not modify metadata fields.
  * Automatically updates `updatedAt` timestamp.
  * 
@@ -65,6 +167,7 @@ export async function createWorkspace(
  * @param workspaceId - ID of workspace to update
  * @param vfs - Updated virtual file system
  * @param editorState - Updated editor state (optional)
+ * @throws {StorageLimitExceededError} If update would exceed storage limit
  */
 export async function updateWorkspace(
   userId: string,
@@ -76,6 +179,39 @@ export async function updateWorkspace(
   if (!db) return;
 
   try {
+    // Phase 1.6: Check storage limit before updating
+    // First, get the current workspace to calculate size delta
+    const currentWorkspace = await db
+      .select({ vfsData: workspacesTable.vfsData })
+      .from(workspacesTable)
+      .where(
+        and(
+          eq(workspacesTable.id, workspaceId),
+          eq(workspacesTable.userId, userId)
+        )
+      )
+      .limit(1);
+
+    if (currentWorkspace.length > 0) {
+      const oldSize = calculateVFSSize(currentWorkspace[0].vfsData as VFSStructure);
+      const newSize = calculateVFSSize(vfs);
+      const sizeDelta = newSize - oldSize;
+
+      // Only check limit if workspace is growing
+      if (sizeDelta > 0) {
+        const currentTotalStorage = await getUserTotalStorage(userId);
+        const newTotalStorage = currentTotalStorage + sizeDelta;
+
+        if (newTotalStorage > env.WORKSPACE_MAX_STORAGE_BYTES) {
+          throw new StorageLimitExceededError(
+            currentTotalStorage,
+            sizeDelta,
+            env.WORKSPACE_MAX_STORAGE_BYTES
+          );
+        }
+      }
+    }
+
     await db
       .update(workspacesTable)
       .set({
@@ -91,6 +227,11 @@ export async function updateWorkspace(
         )
       );
   } catch (error) {
+    // Re-throw custom errors
+    if (error instanceof StorageLimitExceededError) {
+      throw error;
+    }
+    
     console.error('Failed to update workspace:', error);
     throw new Error('Failed to update workspace');
   }
@@ -100,6 +241,7 @@ export async function updateWorkspace(
  * Load a workspace by ID
  * 
  * Validates ownership before returning.
+ * Phase 1.6: Includes GitHub metadata if present.
  * 
  * @param userId - Clerk user ID (for ownership validation)
  * @param workspaceId - ID of workspace to load
@@ -138,6 +280,7 @@ export async function loadWorkspace(
         createdAt: row.createdAt,
         lastOpenedAt: row.lastOpenedAt,
         userId: row.userId,
+        githubMetadata: row.githubMetadata as any,
       },
       vfs: row.vfsData as VFSStructure,
       editorState: row.editorStateData as EditorState | undefined,
@@ -221,7 +364,8 @@ export async function deleteWorkspace(
 /**
  * Get the most recently opened workspace for a user
  * 
- * Used for auto-restore on editor load.
+ * Used for auto-restore on editor load (Phase 1.6 draft recovery).
+ * Phase 1.6: Includes GitHub metadata if present.
  * 
  * @param userId - Clerk user ID
  * @returns Most recent workspace or null if none exist
@@ -252,6 +396,7 @@ export async function getLastOpenedWorkspace(userId: string): Promise<Workspace 
         createdAt: row.createdAt,
         lastOpenedAt: row.lastOpenedAt,
         userId: row.userId,
+        githubMetadata: row.githubMetadata as any,
       },
       vfs: row.vfsData as VFSStructure,
       editorState: row.editorStateData as EditorState | undefined,
