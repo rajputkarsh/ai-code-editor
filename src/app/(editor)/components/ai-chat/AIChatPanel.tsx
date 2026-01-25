@@ -17,9 +17,10 @@ import { ChatContext } from '@/lib/ai/types';
 
 interface AIChatPanelProps {
     onTemplateSelect?: (template: PromptTemplate) => void;
+    onClose?: () => void;
 }
 
-export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
+export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
     const {
         messages,
         addMessage,
@@ -29,8 +30,6 @@ export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
         setStreamingMessage,
         startStreaming,
         finishStreaming,
-        isPanelOpen,
-        closePanel,
         contextInfo,
     } = useAIChatState();
 
@@ -209,9 +208,11 @@ export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
         }
     };
 
-    if (!isPanelOpen) {
-        return null;
-    }
+    const handleClose = () => {
+        if (onClose) {
+            onClose();
+        }
+    };
 
     return (
         <div className="
@@ -241,7 +242,7 @@ export function AIChatPanel({ onTemplateSelect }: AIChatPanelProps) {
                         <Trash2 className="w-4 h-4 text-neutral-400" />
                     </button>
                     <button
-                        onClick={closePanel}
+                        onClick={handleClose}
                         className="p-1.5 rounded hover:bg-neutral-700 transition-colors"
                         title="Close panel"
                     >

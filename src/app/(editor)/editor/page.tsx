@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { EditorLayout } from '../components/layout/EditorLayout';
+import { EditorToolbar } from '../components/layout/EditorToolbar';
 import { FileExplorer } from '../components/file-explorer/FileExplorer';
 import { EditorTabs } from '../components/editor/EditorTabs';
 import { LazyCodeEditor } from '../components/editor/LazyCodeEditor';
@@ -10,7 +11,6 @@ import { useEditorState } from '../stores/editor-state';
 import { useFileSystem } from '../stores/file-system';
 import { useAIChatState } from '../stores/ai-chat-state';
 import { useSelectionState } from '../stores/selection-state';
-import { MessageSquare } from 'lucide-react';
 import { PromptTemplate } from '@/lib/ai/prompt-templates';
 import { ChatContext } from '@/lib/ai/types';
 import { detectLanguage } from '@/lib/file-utils';
@@ -71,7 +71,11 @@ const EditorArea = () => {
 };
 
 export default function EditorPage() {
-    const { addMessage, openPanel, setContextInfo, isPanelOpen } = useAIChatState();
+    // Panel visibility state (single source of truth)
+    const [isFileExplorerOpen, setIsFileExplorerOpen] = useState(true);
+    const [isAIChatOpen, setIsAIChatOpen] = useState(false);
+
+    const { addMessage, setContextInfo } = useAIChatState();
     const { activeTabId, tabs } = useEditorState();
     const { files } = useFileSystem();
     const { selection, hasSelection } = useSelectionState();
@@ -139,7 +143,7 @@ export default function EditorPage() {
         });
 
         // Open panel if not already open
-        openPanel();
+        setIsAIChatOpen(true);
     };
 
     return (
@@ -147,21 +151,24 @@ export default function EditorPage() {
             sidebar={<FileExplorer />}
             editor={
                 <div className="flex flex-col h-full">
+                    {/* VS Code-style Toolbar */}
+                    <EditorToolbar
+                        isFileExplorerOpen={isFileExplorerOpen}
+                        isAIChatOpen={isAIChatOpen}
+                        onFileExplorerToggle={() => setIsFileExplorerOpen(!isFileExplorerOpen)}
+                        onAIChatToggle={() => setIsAIChatOpen(!isAIChatOpen)}
+                    />
                     <EditorArea />
-                    {/* AI Chat Toggle Button */}
-                    {!isPanelOpen && (
-                        <button
-                            onClick={openPanel}
-                            className="fixed bottom-6 right-6 flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg shadow-lg transition-colors"
-                            title="Open AI Chat"
-                        >
-                            <MessageSquare className="w-4 h-4" />
-                            <span className="text-sm font-medium">AI Assistant</span>
-                        </button>
-                    )}
                 </div>
             }
-            aiChat={<LazyAIChatPanel onTemplateSelect={handleTemplateSelect} />}
+            aiChat={isAIChatOpen && (
+                <LazyAIChatPanel 
+                    onTemplateSelect={handleTemplateSelect}
+                    onClose={() => setIsAIChatOpen(false)}
+                />
+            )}
+            isSidebarOpen={isFileExplorerOpen}
+            onSidebarToggle={() => setIsFileExplorerOpen(!isFileExplorerOpen)}
         />
     );
 }

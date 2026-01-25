@@ -16,6 +16,7 @@ const AIChatPanel = lazy(() =>
 
 interface LazyAIChatPanelProps {
     onTemplateSelect?: (template: PromptTemplate) => void;
+    onClose?: () => void;
 }
 
 /**
@@ -25,7 +26,7 @@ const ChatLoadingFallback = () => (
     <div className="
         flex flex-col h-full bg-neutral-900 border-l border-neutral-800 
         w-full md:w-96 
-        flex-shrink-0
+        shrink-0
         fixed md:relative
         top-0 right-0
         z-40
@@ -43,10 +44,10 @@ const ChatLoadingFallback = () => (
  * Lazy-loaded AI Chat Panel
  * Only loads when the panel is actually opened
  */
-export const LazyAIChatPanel: React.FC<LazyAIChatPanelProps> = ({ onTemplateSelect }) => {
+export const LazyAIChatPanel: React.FC<LazyAIChatPanelProps> = ({ onTemplateSelect, onClose }) => {
     return (
         <Suspense fallback={<ChatLoadingFallback />}>
-            <AIChatPanel onTemplateSelect={onTemplateSelect} />
+            <AIChatPanel onTemplateSelect={onTemplateSelect} onClose={onClose} />
         </Suspense>
     );
 };
