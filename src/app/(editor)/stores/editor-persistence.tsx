@@ -96,7 +96,9 @@ export function useEditorStatePersistence() {
    * Register the editor state capture function with workspace provider
    */
   useEffect(() => {
-    setEditorStateCapture(() => getEditorStateToPersist());
+
+    const editorStateFn = () => getEditorStateToPersist();
+    setEditorStateCapture(editorStateFn);
     
     return () => {
       setEditorStateCapture(null);

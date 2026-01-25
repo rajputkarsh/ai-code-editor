@@ -202,7 +202,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const currentVfs = vfs.getStructure();
     
     // Capture current editor state if capture function is registered
-    const currentEditorState = editorStateCaptureFn ? editorStateCaptureFn() : workspace.editorState;
+    const currentEditorState = editorStateCaptureFn ? editorStateCaptureFn : workspace.editorState;
     
     autosaveManagerRef.current.trigger(
       {
@@ -210,7 +210,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         timestamp: Date.now(),
       },
       currentVfs,
-      currentEditorState
+      currentEditorState as EditorState
     );
   }, [workspace, vfs, editorStateCaptureFn]);
 
