@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Workspace, VirtualFileSystem, importZipFile, createEmptyWorkspace } from '@/lib/workspace';
 import { createWorkspaceAPI, updateWorkspaceAPI, getLatestWorkspaceAPI } from '@/lib/workspace/api-client';
-import { createAutosaveManager, type AutosaveManager } from '@/lib/workspace/autosave';
+import { createAutosaveManager, type AutosaveManager, type AutosaveState } from '@/lib/workspace/autosave';
 import type { EditorState } from '@/lib/workspace/types';
 
 interface WorkspaceContextType {
@@ -19,6 +19,7 @@ interface WorkspaceContextType {
   markDirty: (eventType?: 'FILE_CONTENT_CHANGED' | 'FILE_CREATED' | 'FILE_RENAMED' | 'FILE_DELETED' | 'TAB_CHANGED' | 'LAYOUT_CHANGED') => void; // Trigger autosave
   getEditorStateCapture: (() => EditorState | undefined) | null; // Function to capture current editor state
   setEditorStateCapture: (fn: (() => EditorState | undefined) | null) => void; // Register editor state capture function
+  autosaveState: AutosaveState; // Current autosave state for UI indicators
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
@@ -35,6 +36,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   
   // Phase 1.5: Editor state capture function (set by editor-persistence hook)
   const [editorStateCaptureFn, setEditorStateCaptureFn] = useState<(() => EditorState | undefined) | null>(null);
+  
+  // Autosave state for UI indicators
+  const [autosaveState, setAutosaveState] = useState<AutosaveState>('idle');
 
   /**
    * Initialize autosave manager
@@ -58,6 +62,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     autosaveManagerRef.current = createAutosaveManager(autosaveCallback, {
       debounceMs: 2000,
       verbose: false,
+    });
+
+    // Register state change callback for UI indicators
+    autosaveManagerRef.current.onStateChange((state) => {
+      setAutosaveState(state);
     });
 
     // Cleanup on unmount
@@ -295,8 +304,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       markDirty,
       getEditorStateCapture: editorStateCaptureFn,
       setEditorStateCapture: setEditorStateCaptureFn,
+      autosaveState,
     }),
-    [workspace, vfs, isLoading, error, importFromZip, createNewWorkspace, loadWorkspace, updateWorkspaceName, saveWorkspace, markDirty, editorStateCaptureFn]
+    [workspace, vfs, isLoading, error, importFromZip, createNewWorkspace, loadWorkspace, updateWorkspaceName, saveWorkspace, markDirty, editorStateCaptureFn, autosaveState]
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

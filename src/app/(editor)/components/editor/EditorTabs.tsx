@@ -3,11 +3,13 @@
 import React from 'react';
 import { useEditorState } from '@/app/(editor)/stores/editor-state';
 import { useFileSystem } from '@/app/(editor)/stores/file-system';
-import { X, Columns } from 'lucide-react';
+import { useWorkspace } from '@/app/(editor)/stores/workspace-provider';
+import { X, Columns, Loader2 } from 'lucide-react';
 
 export const EditorTabs = () => {
     const { tabs, activeTabId, setActiveTab, closeTab, isSplit, toggleSplit, activeSecondaryTabId, activePaneForFileOpen } = useEditorState();
     const { files } = useFileSystem();
+    const { autosaveState } = useWorkspace();
 
     if (tabs.length === 0) return null;
 
@@ -50,6 +52,17 @@ export const EditorTabs = () => {
                         }
                     }
 
+                    // Save state indicator
+                    let saveIndicator = null;
+                    if (autosaveState === 'pending') {
+                        // Unsaved changes - show filled dot
+                        saveIndicator = <span className="w-2 h-2 rounded-full bg-orange-400" title="Unsaved changes" />;
+                    } else if (autosaveState === 'saving') {
+                        // Syncing - show spinning loader
+                        saveIndicator = <span title="Syncing..."><Loader2 size={12} className="animate-spin text-blue-400" /></span>;
+                    }
+                    // When synced or idle, show no indicator
+
                     return (
                         <div
                             key={tab.id}
@@ -59,8 +72,9 @@ export const EditorTabs = () => {
                 ${isActive ? 'bg-neutral-800 text-white border-t-2 border-t-blue-500' : 'text-neutral-500 hover:bg-neutral-800/50'}
               `}
                         >
-                            <span className="truncate flex-1 flex items-center">
+                            <span className="truncate flex-1 flex items-center gap-1.5">
                                 {file.name}
+                                {saveIndicator}
                                 {paneIndicator}
                             </span>
                             <button

@@ -97,6 +97,11 @@ export type AutosaveCallback = (
  * - Handles retries on failure
  * - Provides status information
  */
+/**
+ * Autosave state
+ */
+export type AutosaveState = 'idle' | 'pending' | 'saving' | 'synced';
+
 export class AutosaveManager {
   private config: AutosaveConfig;
   private callback: AutosaveCallback;
@@ -106,10 +111,37 @@ export class AutosaveManager {
   private lastSaveTimestamp = 0;
   private retryCount = 0;
   private lastError: Error | null = null;
+  private stateChangeCallback: ((state: AutosaveState) => void) | null = null;
 
   constructor(callback: AutosaveCallback, config: Partial<AutosaveConfig> = {}) {
     this.callback = callback;
     this.config = { ...DEFAULT_AUTOSAVE_CONFIG, ...config };
+  }
+
+  /**
+   * Register a callback to be notified of state changes
+   */
+  onStateChange(callback: (state: AutosaveState) => void): void {
+    this.stateChangeCallback = callback;
+  }
+
+  /**
+   * Get current autosave state
+   */
+  getState(): AutosaveState {
+    if (this.isSaving) return 'saving';
+    if (this.isPending) return 'pending';
+    if (this.lastSaveTimestamp > 0) return 'synced';
+    return 'idle';
+  }
+
+  /**
+   * Notify state change
+   */
+  private notifyStateChange(): void {
+    if (this.stateChangeCallback) {
+      this.stateChangeCallback(this.getState());
+    }
   }
 
   /**
@@ -129,6 +161,7 @@ export class AutosaveManager {
 
     // Mark as pending
     this.isPending = true;
+    this.notifyStateChange();
 
     // Clear existing timer
     if (this.debounceTimer) {
@@ -157,6 +190,7 @@ export class AutosaveManager {
 
     this.isSaving = true;
     this.isPending = false;
+    this.notifyStateChange();
 
     try {
       await this.callback(vfs, editorState);
@@ -165,6 +199,7 @@ export class AutosaveManager {
       this.lastSaveTimestamp = Date.now();
       this.retryCount = 0;
       this.lastError = null;
+      this.notifyStateChange();
 
       if (this.config.verbose) {
         console.log('[Autosave] Save successful');
@@ -194,6 +229,7 @@ export class AutosaveManager {
       }
     } finally {
       this.isSaving = false;
+      this.notifyStateChange();
     }
   }
 
