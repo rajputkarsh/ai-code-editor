@@ -1,215 +1,102 @@
-# Phase 1.6 – Storage, Autosave, Sync & GitHub Interop Execution Prompt
+# Phase 1.5 – Workspace Persistence Closure & Validation Prompt
 
-You are a **senior backend + platform engineer** implementing **Phase 1.6** of a **Next.js (App Router) web-based code editor**.
+You are a **senior platform engineer** performing the **final closure step** for **Phase 1.5: Workspace Persistence, Autosave & Sync**.
 
-Authentication (Clerk) and basic workspace persistence already exist.
-
-This phase hardens persistence with:
-- A concrete storage strategy
-- Autosave & draft recovery
-- Cross-device sync
-- GitHub interoperability rules
-- API & security enforcement
-
-This phase is **pure infrastructure** and must not affect editor UX or introduce new UI.
+This prompt is about **verification, enforcement, and hard boundaries** — not adding new features.
 
 ---
 
-## 🎯 PHASE GOAL
+## 🎯 CLOSURE GOAL
 
-Ensure workspace data is:
-- Stored safely and predictably
-- Recoverable after crashes or reloads
-- Consistent across devices
-- Securely isolated per user
-- Ready for future billing limits
+Formally **close Phase 1.5** by:
+- Verifying all guarantees are met
+- Enforcing explicit non-goals
+- Ensuring no accidental scope creep
+- Making the system safe to build on
 
----
-
-## 🧱 SCOPE (ONLY THIS PHASE)
+No new functionality should be introduced.
 
 ---
 
-## 1️⃣ Storage Strategy (Initial)
+## 🧱 NON-GOALS ENFORCEMENT (CRITICAL)
 
-### Architecture Requirements
-- Backend-managed persistence
-- Database used for:
-  - Workspace metadata
-  - File tree structure
-  - Editor state
-- File contents:
-  - Stored in database (text only)
-  - No binary or large files
+Verify and explicitly ensure that the following are **NOT implemented** anywhere in the codebase:
 
-### Design Constraints
-- Optimize for simplicity over scale
-- Prefer a **single database** initially
-- No object storage abstraction required yet
+- ❌ Offline-first synchronization
+- ❌ Version history or time-travel UI
+- ❌ Merge conflict detection or handling
+- ❌ Real-time collaboration or presence
 
-### Explicit Non-Goals
-- Binary assets
-- Large file streaming
-- Version history storage
+### Required Action
+- If partial or accidental implementations exist:
+  - Remove them, OR
+  - Guard them behind comments stating “Out of Scope for Phase 1.5”
 
 ---
 
-## 2️⃣ Autosave Implementation
+## ✅ PHASE EXIT CRITERIA VALIDATION
 
-### Autosave Triggers
-Autosave must trigger on:
-- File content edits
-- File create / rename / delete
-- Tab changes
-- Editor layout changes
-
-### Behavior
-- Debounced server writes
-- Non-blocking UI
-- Always store a **last-known-good state**
-
-### Technical Rules
-- Autosave logic lives in:
-/lib/workspace/autosave
-
-- Autosave must:
-- Be resilient to rapid changes
-- Never block typing
-- Never spam the API
+Verify each of the following **explicitly**:
 
 ---
 
-## 3️⃣ Draft Recovery
+### 1️⃣ Workspace Persistence Across Reloads
 
-### Recovery Scenarios
-Restore unsaved changes after:
-- Page reload
-- Browser crash
-- Network failure
-
-### Recovery Rules
-- On editor load:
-- Fetch latest persisted workspace
-- Hydrate editor state automatically
-- No user prompt required
-- Recovery must be silent and deterministic
+- Reloading the browser restores:
+  - File tree
+  - File contents
+  - Open tabs
+  - Active file
+  - Cursor position
+  - Editor layout
+- No manual user action required
 
 ---
 
-## 4️⃣ Cross-Device Sync
+### 2️⃣ Cross-Device Resume
 
-### Scope
-- User logs in on a different device
-- Most recently saved workspace state is loaded
-- Single source of truth per workspace
-
-### Rules
-- Server state always wins
-- No merge logic
-- No conflict resolution UI
-
-### Explicitly Out of Scope
-- Real-time multi-device sync
-- Concurrent editing detection
+- User logs in on a second device
+- Most recent workspace state loads automatically
+- Server state is the single source of truth
 
 ---
 
-## 5️⃣ GitHub Interoperability Rules
+### 3️⃣ Autosave & Data Loss Prevention
 
-### GitHub-Linked Projects
-- GitHub repository is the source of truth
-- Cloud workspace tracks:
-- Local uncommitted changes
-- Editor state
-- No automatic push to GitHub
-- No background syncing
-
-### Non-GitHub Projects
-- Cloud workspace is the source of truth
-- Persistence behaves exactly as defined above
+- Autosave triggers on:
+  - File edits
+  - Structural changes
+- Debounce works correctly
+- Crashes, reloads, or network failures do **not** lose work
 
 ---
 
-## 6️⃣ APIs & Security (Hono)
+### 4️⃣ Storage & Workspace Limits Enforcement
 
-### API Requirements
-- All persistence APIs implemented using **Hono**
-- All routes must:
-- Require authentication (Clerk)
-- Enforce workspace ownership
-- Workspace ID must always be validated against `userId`
-
-### API Responsibilities
-- Save workspace snapshot
-- Load workspace snapshot
-- List workspaces
-- Enforce limits
+- Workspace count limits enforced server-side
+- Storage size limits enforced server-side
+- Enforcement is:
+  - Silent
+  - Deterministic
+  - Secure
+- No UI required for limits
 
 ---
 
-## 7️⃣ Security & Limits (Infrastructure Only)
+## 🔐 SECURITY & ISOLATION CHECKS
 
-### Security
-- Strict per-user data isolation
-- No cross-user access possible
-- All reads and writes are user-scoped
-
-### Limits (Enforced Server-Side)
-- Maximum number of workspaces per user
-- Maximum total storage per user
-
-### Notes
-- Limits enforced silently
-- No UI for limits in this phase
-- No billing integration yet
+Verify:
+- All workspace reads/writes are user-scoped
+- Workspace ownership is validated on every API call
+- No cross-user access paths exist
+- Auth checks are server-side only
 
 ---
 
-## 🚫 OUT OF SCOPE (DO NOT IMPLEMENT)
+## 🧠 ARCHITECTURAL INTEGRITY CHECK
 
-- GitHub push / pull
-- Real-time collaboration
-- Conflict resolution
-- Version history UI
-- Offline-first behavior
-- Storage analytics UI
-- Billing logic or Stripe integration
-
----
-
-## 🧪 QUALITY REQUIREMENTS
-
-- TypeScript strict
-- No `any`
-- Clear data models:
-- Workspace
-- FileNode
-- EditorState
-- Explicit comments explaining:
-- Autosave debounce strategy
-- Recovery guarantees
-- GitHub vs cloud source-of-truth rules
-
----
-
-## ✅ EXPECTED OUTPUT
-
-At the end of this phase:
-1. Workspace data is stored using a defined strategy
-2. Autosave is reliable and non-intrusive
-3. Drafts recover automatically after crashes/reloads
-4. Workspaces sync correctly across devices
-5. GitHub-linked and non-GitHub projects behave predictably
-6. APIs are secure and user-scoped
-7. Foundation is ready for billing & collaboration
-
----
-
-## 🧠 FINAL INSTRUCTION
-
-This phase is about **correctness and safety**, not features.
-
-Do not add UI, collaboration, or GitHub automation.
-
-If a future need is identified, document it in comments — do not implement early.
-
+Confirm:
+- Editor components do NOT:
+  - Call persistence APIs directly
+  - Know about storage or limits
+- Persistence logic remains isolated under:
