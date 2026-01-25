@@ -644,4 +644,126 @@ Core differentiation remains:
 
 Monetization must never compromise these foundations.
 
+---
+
+# PHASE 8: Keyboard Shortcuts & Power User Productivity
+
+### Goal
+Enable **keyboard-first workflows** that match or closely approximate the productivity experience of **VS Code / Cursor**, without overcomplicating the UI.
+
+This phase focuses on **speed, muscle memory, and discoverability** for advanced users.
+
+---
+
+## 8.1 Global Keyboard Shortcut System
+
+### Scope
+- Centralized keyboard shortcut manager
+- Support platform-aware shortcuts:
+  - macOS
+  - Windows
+  - Linux
+- Shortcut handling must:
+  - Respect focused context
+  - Avoid browser-level conflicts
+  - Be easily extensible
+
+---
+
+## 8.2 Core Editor Shortcuts (MVP Parity)
+
+### File & Navigation
+- Open file (`Cmd/Ctrl + P`)
+- Quick file search by name
+- Close current file
+- Switch between open tabs
+- Move between split editors
+
+---
+
+### Editing
+- Rename symbol (`F2`)
+- Find in file (`Cmd/Ctrl + F`)
+- Replace in file (`Cmd/Ctrl + H`)
+- Go to line (`Cmd/Ctrl + G`)
+- Comment / uncomment line
+
+---
+
+### File Explorer
+- Create new file
+- Create new folder
+- Rename file
+- Delete file
+- Focus file explorer
+
+---
+
+## 8.3 Command Palette
+
+### Scope
+- Command palette inspired by VS Code / Cursor
+- Fuzzy-searchable commands
+- Keyboard-driven invocation (`Cmd/Ctrl + Shift + P`)
+
+### Commands (Initial)
+- Open file
+- Toggle split view
+- Rename file
+- Search in file
+- Toggle editor focus
+
+---
+
+## 8.4 Shortcut Discoverability
+
+### Scope
+- Tooltips displaying shortcuts
+- Inline hints in menus
+- Command palette shows shortcuts
+
+---
+
+## 8.5 Customization (Optional / Deferred)
+
+### Future Scope (Not in MVP)
+- User-defined shortcut remapping
+- Export / import shortcuts
+- Preset profiles (VS Code-like)
+
+---
+
+## 8.6 Technical Notes
+
+- Leverage Monaco Editor’s built-in keybinding system where applicable
+- Custom shortcuts layered on top for:
+  - File explorer
+  - Command palette
+  - App-level actions
+- Keyboard handling must be:
+  - Deterministic
+  - Non-blocking
+  - Accessible
+
+---
+
+## 8.7 Non-Goals
+
+This phase explicitly does **not** include:
+- Macro recording
+- Vim / Emacs keybindings
+- Plugin-based shortcut injection
+- Accessibility shortcuts beyond basics
+
+---
+
+## Phase Exit Criteria
+
+This phase is complete when:
+1. Core editor actions are fully keyboard-accessible
+2. Command palette is functional and discoverable
+3. File and editor navigation can be done without mouse
+4. Shortcut behavior is consistent with VS Code expectations
+
+
 End of Document
