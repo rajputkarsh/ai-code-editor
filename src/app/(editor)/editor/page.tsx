@@ -159,7 +159,7 @@ export default function EditorPage() {
     const { addMessage, setContextInfo } = useAIChatState();
     const { activeTabId, tabs } = useEditorState();
     const { files, updateFileContent, createFile, createFolder, rootId } = useFileSystem();
-    const { createNewWorkspace, saveWorkspace } = useWorkspace();
+    const { createNewWorkspace, saveWorkspace, isLoading } = useWorkspace();
     const { selection, hasSelection } = useSelectionState();
     const { setLoadingAction, setLoadingExplanation, addPromptToHistory } = useInlineAI();
     const toast = useToast();
@@ -693,6 +693,36 @@ export default function EditorPage() {
                 isImporting={isImportingRepo}
             />
             
+            {/* Full Page Loading Overlay - Workspace Restore */}
+            {isLoading && !isImportingRepo && (
+                <div className="fixed inset-0 bg-[#1e1e1e]/98 z-9999 flex flex-col items-center justify-center backdrop-blur-md">
+                    <div className="flex flex-col items-center space-y-6">
+                        {/* Spinner */}
+                        <div className="relative">
+                            <div className="w-20 h-20 border-4 border-neutral-700 border-t-blue-500 rounded-full animate-spin"></div>
+                            <div className="absolute inset-0 w-20 h-20 border-4 border-transparent border-r-blue-400 rounded-full animate-spin" style={{ animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
+                        </div>
+                        
+                        {/* Text Content */}
+                        <div className="text-center space-y-3">
+                            <h2 className="text-2xl font-semibold text-neutral-100">
+                                Loading Workspace
+                            </h2>
+                            <p className="text-base text-neutral-400 max-w-md">
+                                Restoring your latest workspace...
+                            </p>
+                        </div>
+                        
+                        {/* Progress Indicator */}
+                        <div className="flex items-center space-x-2 text-neutral-500">
+                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Full Page Loading Overlay - Repository Import */}
             {isImportingRepo && (
                 <div className="fixed inset-0 bg-[#1e1e1e]/98 z-9999 flex flex-col items-center justify-center backdrop-blur-md">
