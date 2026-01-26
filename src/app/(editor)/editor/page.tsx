@@ -156,7 +156,7 @@ export default function EditorPage() {
 
     const { addMessage, setContextInfo } = useAIChatState();
     const { activeTabId, tabs } = useEditorState();
-    const { files, updateFileContent } = useFileSystem();
+    const { files, updateFileContent, createFile, createFolder, rootId } = useFileSystem();
     const { selection, hasSelection } = useSelectionState();
     const { setLoadingAction, setLoadingExplanation, addPromptToHistory } = useInlineAI();
     const toast = useToast();
@@ -385,10 +385,80 @@ export default function EditorPage() {
      * Handle GitHub repository import (Phase 2)
      */
     const handleGitHubImport = async (repoUrl: string, branch: string) => {
-        console.log('Importing repository:', repoUrl, 'branch:', branch);
-        // TODO: Implement actual repository cloning logic
-        // For now, just show a success message
-        toast.info(`Repository import started!\n\nRepo: ${repoUrl}\nBranch: ${branch}\n\nNote: Full implementation requires additional backend setup.`, 8000);
+        try {
+            // Parse GitHub URL to extract owner and repo
+            const urlMatch = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+            if (!urlMatch) {
+                toast.error('Invalid GitHub repository URL');
+                return;
+            }
+            
+            const [, owner, repoName] = urlMatch;
+            const cleanRepoName = repoName.replace(/\.git$/, '');
+            
+            toast.info(`Importing ${owner}/${cleanRepoName} from branch ${branch}...`);
+            
+            // Create root folder for the repository
+            const repoFolderId = createFolder(rootId, cleanRepoName);
+            
+            // Recursively fetch and create files/folders
+            let fileCount = 0;
+            let folderCount = 0;
+            
+            const fetchContents = async (path: string, parentId: string): Promise<void> => {
+                const response = await fetch(
+                    `/api/github/repository/${owner}/${cleanRepoName}/contents?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(branch)}`
+                );
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `Failed to fetch contents for path: ${path}`);
+                }
+                
+                const data = await response.json();
+                
+                // Handle directory listing
+                if (data.type === 'dir' && data.contents) {
+                    for (const item of data.contents) {
+                        if (item.type === 'dir') {
+                            // Create folder and recursively fetch its contents
+                            const folderId = createFolder(parentId, item.name);
+                            folderCount++;
+                            await fetchContents(item.path, folderId);
+                        } else if (item.type === 'file') {
+                            // Fetch file content
+                            const fileResponse = await fetch(
+                                `/api/github/repository/${owner}/${cleanRepoName}/contents?path=${encodeURIComponent(item.path)}&ref=${encodeURIComponent(branch)}`
+                            );
+                            
+                            if (fileResponse.ok) {
+                                const fileData = await fileResponse.json();
+                                if (fileData.type === 'file' && fileData.content) {
+                                    createFile(parentId, item.name, fileData.content);
+                                    fileCount++;
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            
+            // Start fetching from root
+            await fetchContents('', repoFolderId);
+            
+            toast.success(
+                `✅ Repository imported successfully!\n\n` +
+                `${folderCount} folders and ${fileCount} files imported from ${owner}/${cleanRepoName} (${branch})`,
+                5000
+            );
+            
+        } catch (error) {
+            console.error('Failed to import repository:', error);
+            toast.error(
+                `❌ Failed to import repository: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                5000
+            );
+        }
     };
 
     return (
