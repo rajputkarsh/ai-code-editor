@@ -51,7 +51,8 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
         };
     });
 
-    const rootId = 'root';
+    // Get rootId from VFS if available, otherwise default to 'root'
+    const rootId = vfs ? vfs.getRootId() : 'root';
     
     // Sync files from workspace VFS when available
     useEffect(() => {

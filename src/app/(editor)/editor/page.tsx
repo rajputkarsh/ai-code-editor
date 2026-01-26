@@ -159,7 +159,7 @@ export default function EditorPage() {
     const { addMessage, setContextInfo } = useAIChatState();
     const { activeTabId, tabs } = useEditorState();
     const { files, updateFileContent, createFile, createFolder, rootId } = useFileSystem();
-    const { createNewWorkspace } = useWorkspace();
+    const { createNewWorkspace, vfs, saveWorkspace } = useWorkspace();
     const { selection, hasSelection } = useSelectionState();
     const { setLoadingAction, setLoadingExplanation, addPromptToHistory } = useInlineAI();
     const toast = useToast();
@@ -409,7 +409,13 @@ export default function EditorPage() {
             await createNewWorkspace(cleanRepoName);
             
             // Wait for the workspace to be fully created, VFS to be ready, and React state to update
-            await new Promise(resolve => setTimeout(resolve, 1200));
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            // Get the fresh rootId from the VFS after workspace creation
+            if (!vfs) {
+                throw new Error('VFS not initialized');
+            }
+            const freshRootId = vfs.getRootId();
             
             toast.info(`📥 Importing ${owner}/${cleanRepoName} from branch ${branch}...`, 3000);
             
@@ -419,7 +425,7 @@ export default function EditorPage() {
             
             // Map to store folder paths to their IDs for parallel processing
             const folderMap = new Map<string, string>();
-            folderMap.set('', rootId); // Root path maps to rootId
+            folderMap.set('', freshRootId); // Root path maps to fresh rootId
             
             // Recursively fetch directory structure and collect all files
             const fetchContents = async (path: string, parentId: string): Promise<Array<{path: string, parentId: string, name: string}>> => {
@@ -472,14 +478,81 @@ export default function EditorPage() {
             };
             
             // Fetch all directory structure and get list of all files
-            const allFiles = await fetchContents('', rootId);
+            const allFiles = await fetchContents('', freshRootId);
             
             toast.info(`📦 Downloading ${allFiles.length} files...`, 2000);
             
+            // Helper function to check if file should be imported (text or image)
+            const isImportableFile = (filename: string): boolean => {
+                const importableExtensions = [
+                    // Code files
+                    '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
+                    '.py', '.java', '.c', '.cpp', '.h', '.hpp', '.cs', '.go', '.rs', '.rb', '.php',
+                    '.swift', '.kt', '.scala', '.r', '.m', '.sh', '.bash', '.zsh', '.fish',
+                    // Web files
+                    '.html', '.htm', '.css', '.scss', '.sass', '.less', '.vue', '.svelte',
+                    '.xml', '.svg', '.json', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf',
+                    // Text files
+                    '.txt', '.md', '.markdown', '.rst', '.adoc', '.tex',
+                    // Config files
+                    '.env', '.gitignore', '.gitattributes', '.editorconfig', '.eslintrc', '.prettierrc',
+                    '.babelrc', '.npmrc', '.yarnrc', '.dockerignore',
+                    // Data files
+                    '.csv', '.tsv', '.log', '.sql',
+                    // Images (will be converted to base64 data URLs)
+                    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp',
+                ];
+                
+                const lowerFilename = filename.toLowerCase();
+                
+                // Check if it matches common importable file extensions
+                if (importableExtensions.some(ext => lowerFilename.endsWith(ext))) {
+                    return true;
+                }
+                
+                // Special files without extensions (common in repos)
+                const textFilenames = ['readme', 'license', 'makefile', 'dockerfile', 'gemfile', 'rakefile', 'procfile'];
+                if (textFilenames.some(name => lowerFilename === name || lowerFilename.startsWith(name + '.'))) {
+                    return true;
+                }
+                
+                return false;
+            };
+            
+            // Helper to get MIME type for images
+            const getImageMimeType = (filename: string): string => {
+                const ext = filename.toLowerCase().split('.').pop();
+                const mimeTypes: Record<string, string> = {
+                    'png': 'image/png',
+                    'jpg': 'image/jpeg',
+                    'jpeg': 'image/jpeg',
+                    'gif': 'image/gif',
+                    'webp': 'image/webp',
+                    'ico': 'image/x-icon',
+                    'bmp': 'image/bmp',
+                    'svg': 'image/svg+xml',
+                };
+                return mimeTypes[ext || ''] || 'image/png';
+            };
+            
+            // Helper function to sanitize content (remove null bytes)
+            const sanitizeContent = (content: string): string => {
+                // Remove null bytes which PostgreSQL can't handle
+                return content.replace(/\0/g, '');
+            };
+            
+            // Filter importable files (text and images)
+            const importableFiles = allFiles.filter(file => isImportableFile(file.name));
+            const skippedFiles = allFiles.length - importableFiles.length;
+            
+            if (skippedFiles > 0) {
+                toast.info(`⚠️ Skipping ${skippedFiles} binary file(s). Importing ${importableFiles.length} files...`, 3000);
+            }
+            
             // Fetch and create files in parallel batches (10 at a time to avoid overwhelming the API)
             const BATCH_SIZE = 10;
-            for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
-                const batch = allFiles.slice(i, i + BATCH_SIZE);
+            for (let i = 0; i < importableFiles.length; i += BATCH_SIZE) {
+                const batch = importableFiles.slice(i, i + BATCH_SIZE);
                 
                 await Promise.all(
                     batch.map(async (fileInfo) => {
@@ -490,9 +563,23 @@ export default function EditorPage() {
                             
                             if (fileResponse.ok) {
                                 const fileData = await fileResponse.json();
-                                if (fileData.type === 'file' && fileData.content) {
-                                    createFile(fileInfo.parentId, fileInfo.name, fileData.content);
+                                
+                                if (fileData.type === 'file' && fileData.content && !fileData.isBinary) {
+                                    let finalContent: string;
+                                    
+                                    if (fileData.isImage) {
+                                        // Convert base64 image to data URL
+                                        const mimeType = getImageMimeType(fileInfo.name);
+                                        finalContent = `data:${mimeType};base64,${fileData.content}`;
+                                    } else {
+                                        // Sanitize text content to remove any remaining null bytes
+                                        finalContent = sanitizeContent(fileData.content);
+                                    }
+                                    
+                                    createFile(fileInfo.parentId, fileInfo.name, finalContent);
                                     fileCount++;
+                                } else if (fileData.isBinary) {
+                                    console.log(`Skipping binary file: ${fileInfo.name}`);
                                 }
                             }
                         } catch (err) {
@@ -502,18 +589,23 @@ export default function EditorPage() {
                 );
                 
                 // Update progress
-                if (allFiles.length > 20) {
-                    toast.info(`📥 Downloaded ${Math.min(i + BATCH_SIZE, allFiles.length)}/${allFiles.length} files...`, 1000);
+                if (importableFiles.length > 20) {
+                    toast.info(`📥 Downloaded ${Math.min(i + BATCH_SIZE, importableFiles.length)}/${importableFiles.length} files...`, 1000);
                 }
             }
             
-            toast.success(
-                `✅ Repository imported successfully!\n\n` +
-                `${folderCount} folders and ${fileCount} files imported from ${owner}/${cleanRepoName} (${branch})`,
-                5000
-            );
+            // Manually save the workspace to ensure all files are persisted
+            toast.info('💾 Saving workspace...', 2000);
+            await saveWorkspace();
             
-       } catch (error) {
+            const skippedCount = allFiles.length - fileCount;
+            const successMessage = skippedCount > 0
+                ? `✅ Repository imported successfully!\n\n${folderCount} folders and ${fileCount} files imported (includes images).\n${skippedCount} non-text binary file(s) skipped.`
+                : `✅ Repository imported successfully!\n\n${folderCount} folders and ${fileCount} files imported from ${owner}/${cleanRepoName} (${branch})`;
+            
+            toast.success(successMessage, 5000);
+            
+        } catch (error) {
             console.error('Failed to import repository:', error);
             toast.error(
                 `❌ Failed to import repository: ${error instanceof Error ? error.message : 'Unknown error'}`,

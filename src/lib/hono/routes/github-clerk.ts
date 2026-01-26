@@ -182,16 +182,65 @@ app.get('/repository/:owner/:repo/contents', async (c) => {
     
     // If it's a file, decode the content
     if (contents.type === 'file' && contents.content) {
-      const decodedContent = Buffer.from(contents.content, 'base64').toString('utf-8');
+      // GitHub API provides encoding info - usually 'base64' for all files
+      const encoding = contents.encoding || 'base64';
+      const fileName = contents.name.toLowerCase();
       
-      return c.json({
-        type: 'file',
-        name: contents.name,
-        path: contents.path,
-        sha: contents.sha,
-        size: contents.size,
-        content: decodedContent,
-      });
+      // Check if it's an image file
+      const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp'];
+      const isImage = imageExtensions.some(ext => fileName.endsWith(ext));
+      
+      // Check if it's SVG (text-based image)
+      const isSvg = fileName.endsWith('.svg');
+      
+      try {
+        if (isImage && !isSvg) {
+          // For binary images, keep as base64 and mark as image
+          // This will be converted to data URL on the frontend
+          return c.json({
+            type: 'file',
+            name: contents.name,
+            path: contents.path,
+            sha: contents.sha,
+            size: contents.size,
+            content: contents.content, // Keep base64
+            isImage: true,
+            isBinary: false, // We can store base64
+            encoding: encoding,
+          });
+        }
+        
+        // Try to decode as UTF-8 text
+        const decodedContent = Buffer.from(contents.content, encoding as BufferEncoding).toString('utf-8');
+        
+        // Check if content has null bytes (binary file indicator)
+        const isBinary = decodedContent.includes('\0');
+        
+        return c.json({
+          type: 'file',
+          name: contents.name,
+          path: contents.path,
+          sha: contents.sha,
+          size: contents.size,
+          content: isBinary ? null : decodedContent,
+          isImage: false,
+          isBinary: isBinary,
+          encoding: encoding,
+        });
+      } catch (error) {
+        // If decoding fails, it's likely a binary file
+        return c.json({
+          type: 'file',
+          name: contents.name,
+          path: contents.path,
+          sha: contents.sha,
+          size: contents.size,
+          content: null,
+          isImage: false,
+          isBinary: true,
+          encoding: encoding,
+        });
+      }
     }
     
     // If it's a directory, return the list

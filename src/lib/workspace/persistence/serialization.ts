@@ -11,6 +11,26 @@
 
 import { Workspace, SerializedWorkspace, VFSStructure, EditorState } from '../types';
 
+function sanitizeJsonValue(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return value.replace(/\u0000/g, '\\u0000');
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeJsonValue(item));
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    return entries.reduce<Record<string, unknown>>((acc, [key, entryValue]) => {
+      acc[key] = sanitizeJsonValue(entryValue);
+      return acc;
+    }, {});
+  }
+
+  return value;
+}
+
 /**
  * Serialize a Workspace for database storage
  * 
@@ -20,13 +40,18 @@ import { Workspace, SerializedWorkspace, VFSStructure, EditorState } from '../ty
  * - EditorState → JSON string (if present)
  */
 export function serializeWorkspace(workspace: Workspace, userId: string): SerializedWorkspace {
+  const sanitizedVfs = sanitizeJsonValue(workspace.vfs);
+  const sanitizedEditorState = workspace.editorState
+    ? sanitizeJsonValue(workspace.editorState)
+    : null;
+
   return {
     id: workspace.metadata.id,
     userId: userId,
     name: workspace.metadata.name,
     source: workspace.metadata.source,
-    vfsData: JSON.stringify(workspace.vfs),
-    editorStateData: workspace.editorState ? JSON.stringify(workspace.editorState) : null,
+    vfsData: JSON.stringify(sanitizedVfs),
+    editorStateData: sanitizedEditorState ? JSON.stringify(sanitizedEditorState) : null,
     createdAt: workspace.metadata.createdAt.toISOString(),
     lastOpenedAt: workspace.metadata.lastOpenedAt.toISOString(),
     updatedAt: new Date().toISOString(),
@@ -77,13 +102,15 @@ export function deserializeWorkspace(serialized: SerializedWorkspace): Workspace
  * Prepare VFS data for database storage (JSONB column)
  */
 export function serializeVFS(vfs: VFSStructure): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(vfs)) as Record<string, unknown>;
+  const sanitized = sanitizeJsonValue(vfs);
+  return JSON.parse(JSON.stringify(sanitized)) as Record<string, unknown>;
 }
 
 /**
  * Prepare EditorState for database storage (JSONB column)
  */
 export function serializeEditorState(editorState: EditorState): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(editorState)) as Record<string, unknown>;
+  const sanitized = sanitizeJsonValue(editorState);
+  return JSON.parse(JSON.stringify(sanitized)) as Record<string, unknown>;
 }
 
