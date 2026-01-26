@@ -37,6 +37,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   // Phase 1.6: Enhanced autosave using AutosaveManager
   const autosaveManagerRef = useRef<AutosaveManager | null>(null);
   const isRestoringRef = useRef(false);
+  const workspaceRef = useRef<Workspace | null>(null);
+  const vfsRef = useRef<VirtualFileSystem | null>(null);
   
   // Phase 1.5: Editor state capture function (set by editor-persistence hook)
   const [editorStateCaptureFn, setEditorStateCaptureFn] = useState<(() => EditorState | undefined) | null>(null);
@@ -47,19 +49,20 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   // Track which files have unsaved changes
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
 
-  /**
-   * Initialize autosave manager
-   * 
-   * Phase 1.6: Creates AutosaveManager instance when workspace is loaded.
-   */
-  useEffect(() => {
-    if (!workspace || !vfs) return;
+  const initAutosaveManager = useCallback((targetWorkspace: Workspace, targetVfs: VirtualFileSystem) => {
+    if (autosaveManagerRef.current) {
+      autosaveManagerRef.current.destroy();
+      autosaveManagerRef.current = null;
+    }
 
     // Create autosave manager with callback
     const autosaveCallback = async (vfsStructure: any, editorState?: EditorState) => {
+      const currentWorkspace = workspaceRef.current;
+      if (!currentWorkspace) return;
+
       try {
-        await updateWorkspaceAPI(workspace.metadata.id, vfsStructure, editorState);
-        console.log('[Autosave] Saved workspace:', workspace.metadata.name);
+        await updateWorkspaceAPI(currentWorkspace.metadata.id, vfsStructure, editorState);
+        console.log('[Autosave] Saved workspace:', currentWorkspace.metadata.name);
       } catch (err) {
         console.error('[Autosave] Failed to save workspace:', err);
         throw err;
@@ -80,6 +83,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setDirtyFiles(new Set());
       }
     });
+  }, []);
+
+  /**
+   * Initialize autosave manager
+   * 
+   * Phase 1.6: Creates AutosaveManager instance when workspace is loaded.
+   */
+  useEffect(() => {
+    workspaceRef.current = workspace;
+    vfsRef.current = vfs;
+
+    if (!workspace || !vfs) return;
+    initAutosaveManager(workspace, vfs);
 
     // Cleanup on unmount
     return () => {
@@ -88,7 +104,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         autosaveManagerRef.current = null;
       }
     };
-  }, [workspace, vfs]);
+  }, [workspace, vfs, initAutosaveManager]);
 
   /**
    * Restore workspace on mount
@@ -159,28 +175,30 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
    * Also used after creating a new workspace.
    */
   const saveWorkspace = useCallback(async (editorState?: EditorState) => {
-    if (!workspace || !vfs) return;
+    const currentWorkspace = workspaceRef.current;
+    const currentVfs = vfsRef.current;
+    if (!currentWorkspace || !currentVfs) return;
 
     setError(null);
 
     try {
-      const currentVfs = vfs.getStructure();
+      const currentVfsStructure = currentVfs.getStructure();
       
       // Update workspace with latest editor state if provided
       const workspaceToSave: Workspace = {
-        ...workspace,
-        vfs: currentVfs,
-        editorState: editorState || workspace.editorState,
+        ...currentWorkspace,
+        vfs: currentVfsStructure,
+        editorState: editorState || currentWorkspace.editorState,
       };
 
       // Check if workspace already exists on server
-      if (!workspace.metadata.userId) {
+      if (!currentWorkspace.metadata.userId) {
         // New workspace - create it
         const result = await createWorkspaceAPI({
-          id: workspace.metadata.id,
-          name: workspace.metadata.name,
-          source: workspace.metadata.source,
-          vfs: currentVfs,
+          id: currentWorkspace.metadata.id,
+          name: currentWorkspace.metadata.name,
+          source: currentWorkspace.metadata.source,
+          vfs: currentVfsStructure,
           editorState: editorState,
         });
 
@@ -188,16 +206,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           throw new Error(result.error);
         }
 
-        console.log('[Phase 1.6] Created new workspace:', workspace.metadata.name);
+        console.log('[Phase 1.6] Created new workspace:', currentWorkspace.metadata.name);
       } else {
         // Existing workspace - use autosave manager for force save
         if (autosaveManagerRef.current) {
-          await autosaveManagerRef.current.forceSave(currentVfs, editorState);
+          await autosaveManagerRef.current.forceSave(currentVfsStructure, editorState);
         } else {
           // Fallback if autosave manager not initialized
-          await updateWorkspaceAPI(workspace.metadata.id, currentVfs, editorState);
+          await updateWorkspaceAPI(currentWorkspace.metadata.id, currentVfsStructure, editorState);
         }
-        console.log('[Phase 1.6] Saved workspace:', workspace.metadata.name);
+        console.log('[Phase 1.6] Saved workspace:', currentWorkspace.metadata.name);
       }
       
       // Update local workspace state with editor state
@@ -207,7 +225,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setError(errorMessage);
       console.error('[Phase 1.6] Save error:', err);
     }
-  }, [workspace, vfs]);
+  }, []);
 
   /**
    * Mark workspace as dirty (needs saving)
@@ -219,27 +237,29 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
    * @param fileId - Optional file ID for file-specific changes
    */
   const markDirty = useCallback((eventType: 'FILE_CONTENT_CHANGED' | 'FILE_CREATED' | 'FILE_RENAMED' | 'FILE_DELETED' | 'TAB_CHANGED' | 'LAYOUT_CHANGED' = 'FILE_CONTENT_CHANGED', fileId?: string) => {
-    if (!workspace || !vfs || !autosaveManagerRef.current) return;
+    const currentWorkspace = workspaceRef.current;
+    const currentVfs = vfsRef.current;
+    if (!currentWorkspace || !currentVfs || !autosaveManagerRef.current) return;
 
     // Track dirty files for file-specific changes
     if (fileId && (eventType === 'FILE_CONTENT_CHANGED' || eventType === 'FILE_CREATED' || eventType === 'FILE_RENAMED')) {
       setDirtyFiles(prev => new Set(prev).add(fileId));
     }
 
-    const currentVfs = vfs.getStructure();
+    const currentVfsStructure = currentVfs.getStructure();
     
     // Capture current editor state if capture function is registered
-    const currentEditorState = editorStateCaptureFn ? editorStateCaptureFn : workspace.editorState;
+    const currentEditorState = editorStateCaptureFn ? editorStateCaptureFn : currentWorkspace.editorState;
     
     autosaveManagerRef.current.trigger(
       {
         type: eventType,
         timestamp: Date.now(),
       },
-      currentVfs,
+      currentVfsStructure,
       currentEditorState as EditorState
     );
-  }, [workspace, vfs, editorStateCaptureFn]);
+  }, [editorStateCaptureFn]);
 
   /**
    * Import workspace from ZIP file
@@ -277,6 +297,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const vfsInstance = new VirtualFileSystem(newWorkspace.vfs);
     setVfs(vfsInstance);
     setError(null);
+    workspaceRef.current = newWorkspace;
+    vfsRef.current = vfsInstance;
+    initAutosaveManager(newWorkspace, vfsInstance);
     
     // Save new workspace to server (optional)
     if (options?.save !== false) {
@@ -299,7 +322,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     }
 
     return { workspace: newWorkspace, vfs: vfsInstance };
-  }, []);
+  }, [initAutosaveManager]);
 
   /**
    * Load an existing workspace
@@ -309,7 +332,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const vfsInstance = new VirtualFileSystem(workspace.vfs);
     setVfs(vfsInstance);
     setError(null);
-  }, []);
+    workspaceRef.current = workspace;
+    vfsRef.current = vfsInstance;
+    initAutosaveManager(workspace, vfsInstance);
+  }, [initAutosaveManager]);
 
   /**
    * Update workspace name

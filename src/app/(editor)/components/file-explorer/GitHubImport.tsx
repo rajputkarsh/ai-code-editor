@@ -303,7 +303,7 @@ export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onI
                                         <button
                                             key={repo.id}
                                             onClick={() => selectRepository(repo)}
-                                            disabled={isImporting}
+                                            disabled={isImporting || isLoadingBranches}
                                             className="w-full p-4 rounded-lg border border-neutral-700 hover:border-neutral-600 bg-neutral-800 hover:bg-neutral-750 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             <div className="flex items-start justify-between">
