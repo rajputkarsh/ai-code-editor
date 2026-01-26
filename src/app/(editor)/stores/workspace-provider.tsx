@@ -12,7 +12,10 @@ interface WorkspaceContextType {
   isLoading: boolean;
   error: string | null;
   importFromZip: (file: File) => Promise<void>;
-  createNewWorkspace: (name?: string) => void;
+  createNewWorkspace: (name?: string, options?: { save?: boolean }) => Promise<{
+    workspace: Workspace;
+    vfs: VirtualFileSystem;
+  }>;
   loadWorkspace: (workspace: Workspace) => void;
   updateWorkspaceName: (name: string) => void;
   saveWorkspace: (editorState?: EditorState) => Promise<void>;
@@ -267,7 +270,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   /**
    * Create a new empty workspace
    */
-  const createNewWorkspace = useCallback(async (name: string = 'New Project') => {
+  const createNewWorkspace = useCallback(async (name: string = 'New Project', options?: { save?: boolean }) => {
     const newWorkspace = createEmptyWorkspace(name);
     setWorkspace(newWorkspace);
     
@@ -275,9 +278,28 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     setVfs(vfsInstance);
     setError(null);
     
-    // Save new workspace to server
-    await saveWorkspace();
-  }, [saveWorkspace]);
+    // Save new workspace to server (optional)
+    if (options?.save !== false) {
+      try {
+        const result = await createWorkspaceAPI({
+          id: newWorkspace.metadata.id,
+          name: newWorkspace.metadata.name,
+          source: newWorkspace.metadata.source,
+          vfs: newWorkspace.vfs,
+        });
+
+        if ('error' in result) {
+          throw new Error(result.error);
+        }
+
+        console.log('[Phase 1.6] Created new workspace:', newWorkspace.metadata.name);
+      } catch (saveErr) {
+        console.warn('[Phase 1.6] Failed to save new workspace (will try on first edit):', saveErr);
+      }
+    }
+
+    return { workspace: newWorkspace, vfs: vfsInstance };
+  }, []);
 
   /**
    * Load an existing workspace

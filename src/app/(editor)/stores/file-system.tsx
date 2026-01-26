@@ -1,14 +1,14 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { FileNode, generateId, INITIAL_FILE_SYSTEM } from '@/lib/file-utils';
 import { useWorkspace } from './workspace-provider';
 import { VFSNode } from '@/lib/workspace';
 
 interface FileSystemContextType {
     files: Record<string, FileNode>;
-    createFile: (parentId: string, name: string, content?: string) => string;
-    createFolder: (parentId: string, name: string) => string;
+    createFile: (parentId: string, name: string, content?: string, options?: { skipAutosave?: boolean }) => string;
+    createFolder: (parentId: string, name: string, options?: { skipAutosave?: boolean }) => string;
     deleteNode: (id: string) => void;
     renameNode: (id: string, newName: string) => void;
     updateFileContent: (id: string, content: string) => void;
@@ -34,6 +34,7 @@ function vfsNodeToFileNode(node: VFSNode): FileNode {
 
 export function FileSystemProvider({ children }: { children: React.ReactNode }) {
     const { vfs, markDirty } = useWorkspace();
+    const vfsRef = useRef(vfs);
     
     const [files, setFiles] = useState<Record<string, FileNode>>(() => {
         // Initialize with a root folder and a sample file
@@ -54,37 +55,37 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
     // Get rootId from VFS if available, otherwise default to 'root'
     const rootId = vfs ? vfs.getRootId() : 'root';
     
+    const syncFromVfs = useCallback((vfsInstance: typeof vfs | null) => {
+        if (!vfsInstance) return;
+        const structure = vfsInstance.getStructure();
+        const fileNodes: Record<string, FileNode> = {};
+
+        Object.entries(structure.nodes).forEach(([id, node]) => {
+            fileNodes[id] = vfsNodeToFileNode(node);
+        });
+
+        setFiles(fileNodes);
+    }, []);
+
     // Sync files from workspace VFS when available
     useEffect(() => {
-        if (vfs) {
-            const structure = vfs.getStructure();
-            const fileNodes: Record<string, FileNode> = {};
-            
-            Object.entries(structure.nodes).forEach(([id, node]) => {
-                fileNodes[id] = vfsNodeToFileNode(node);
-            });
-            
-            setFiles(fileNodes);
-        }
-    }, [vfs]);
+        vfsRef.current = vfs;
+        syncFromVfs(vfs);
+    }, [vfs, syncFromVfs]);
 
-    const createFile = useCallback((parentId: string, name: string, content: string = '') => {
+    const createFile = useCallback((parentId: string, name: string, content: string = '', options?: { skipAutosave?: boolean }) => {
         let newId = '';
         
         // Update VFS if available
-        if (vfs) {
-            newId = vfs.createFile(parentId, name, content);
-            const structure = vfs.getStructure();
-            const fileNodes: Record<string, FileNode> = {};
-            
-            Object.entries(structure.nodes).forEach(([id, node]) => {
-                fileNodes[id] = vfsNodeToFileNode(node);
-            });
-            
-            setFiles(fileNodes);
+        const vfsInstance = vfsRef.current;
+        if (vfsInstance) {
+            newId = vfsInstance.createFile(parentId, name, content);
+            syncFromVfs(vfsInstance);
             
             // Trigger autosave after creating file
-            markDirty('FILE_CREATED', newId);
+            if (!options?.skipAutosave) {
+                markDirty('FILE_CREATED', newId);
+            }
         } else {
             // Fallback to old behavior
             const id = generateId();
@@ -112,25 +113,21 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
         }
         
         return newId;
-    }, [vfs, markDirty]);
+    }, [markDirty, syncFromVfs]);
 
-    const createFolder = useCallback((parentId: string, name: string) => {
+    const createFolder = useCallback((parentId: string, name: string, options?: { skipAutosave?: boolean }) => {
         let newId = '';
         
         // Update VFS if available
-        if (vfs) {
-            newId = vfs.createFolder(parentId, name);
-            const structure = vfs.getStructure();
-            const fileNodes: Record<string, FileNode> = {};
-            
-            Object.entries(structure.nodes).forEach(([id, node]) => {
-                fileNodes[id] = vfsNodeToFileNode(node);
-            });
-            
-            setFiles(fileNodes);
+        const vfsInstance = vfsRef.current;
+        if (vfsInstance) {
+            newId = vfsInstance.createFolder(parentId, name);
+            syncFromVfs(vfsInstance);
             
             // Trigger autosave after creating folder (folders don't need dirty tracking)
-            markDirty('FILE_CREATED');
+            if (!options?.skipAutosave) {
+                markDirty('FILE_CREATED');
+            }
         } else {
             // Fallback to old behavior
             const id = generateId();
@@ -158,20 +155,14 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
         }
         
         return newId;
-    }, [vfs, markDirty]);
+    }, [markDirty, syncFromVfs]);
 
     const deleteNode = useCallback((id: string) => {
         // Update VFS if available
-        if (vfs) {
-            vfs.deleteNode(id);
-            const structure = vfs.getStructure();
-            const fileNodes: Record<string, FileNode> = {};
-            
-            Object.entries(structure.nodes).forEach(([nodeId, node]) => {
-                fileNodes[nodeId] = vfsNodeToFileNode(node);
-            });
-            
-            setFiles(fileNodes);
+        const vfsInstance = vfsRef.current;
+        if (vfsInstance) {
+            vfsInstance.deleteNode(id);
+            syncFromVfs(vfsInstance);
             
             // Trigger autosave after deleting node
             markDirty('FILE_DELETED');
@@ -207,20 +198,14 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
                 return next;
             });
         }
-    }, [vfs, markDirty]);
+    }, [markDirty, syncFromVfs]);
 
     const renameNode = useCallback((id: string, newName: string) => {
         // Update VFS if available
-        if (vfs) {
-            vfs.renameNode(id, newName);
-            const structure = vfs.getStructure();
-            const fileNodes: Record<string, FileNode> = {};
-            
-            Object.entries(structure.nodes).forEach(([nodeId, node]) => {
-                fileNodes[nodeId] = vfsNodeToFileNode(node);
-            });
-            
-            setFiles(fileNodes);
+        const vfsInstance = vfsRef.current;
+        if (vfsInstance) {
+            vfsInstance.renameNode(id, newName);
+            syncFromVfs(vfsInstance);
             
             // Trigger autosave after renaming node
             markDirty('FILE_RENAMED', id);
@@ -234,20 +219,14 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
                 };
             });
         }
-    }, [vfs, markDirty]);
+    }, [markDirty, syncFromVfs]);
 
     const updateFileContent = useCallback((id: string, content: string) => {
         // Update VFS if available
-        if (vfs) {
-            vfs.writeFile(id, content);
-            const structure = vfs.getStructure();
-            const fileNodes: Record<string, FileNode> = {};
-            
-            Object.entries(structure.nodes).forEach(([nodeId, node]) => {
-                fileNodes[nodeId] = vfsNodeToFileNode(node);
-            });
-            
-            setFiles(fileNodes);
+        const vfsInstance = vfsRef.current;
+        if (vfsInstance) {
+            vfsInstance.writeFile(id, content);
+            syncFromVfs(vfsInstance);
             
             // Note: markDirty() is also called in CodeEditor, but we call it here
             // to ensure all file content updates trigger autosave
@@ -259,7 +238,7 @@ export function FileSystemProvider({ children }: { children: React.ReactNode }) 
                 [id]: { ...prev[id], content },
             }));
         }
-    }, [vfs, markDirty]);
+    }, [markDirty, syncFromVfs]);
 
     const value = useMemo(
         () => ({

@@ -159,7 +159,7 @@ export default function EditorPage() {
     const { addMessage, setContextInfo } = useAIChatState();
     const { activeTabId, tabs } = useEditorState();
     const { files, updateFileContent, createFile, createFolder, rootId } = useFileSystem();
-    const { createNewWorkspace, vfs, saveWorkspace } = useWorkspace();
+    const { createNewWorkspace, saveWorkspace } = useWorkspace();
     const { selection, hasSelection } = useSelectionState();
     const { setLoadingAction, setLoadingExplanation, addPromptToHistory } = useInlineAI();
     const toast = useToast();
@@ -406,16 +406,8 @@ export default function EditorPage() {
             toast.info(`🔄 Creating new workspace for ${owner}/${cleanRepoName}...`, 3000);
             
             // Create a new clean workspace (this clears all existing files)
-            await createNewWorkspace(cleanRepoName);
-            
-            // Wait for the workspace to be fully created, VFS to be ready, and React state to update
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            
-            // Get the fresh rootId from the VFS after workspace creation
-            if (!vfs) {
-                throw new Error('VFS not initialized');
-            }
-            const freshRootId = vfs.getRootId();
+            const { vfs: freshVfs } = await createNewWorkspace(cleanRepoName, { save: false });
+            const freshRootId = freshVfs.getRootId();
             
             toast.info(`📥 Importing ${owner}/${cleanRepoName} from branch ${branch}...`, 3000);
             
@@ -449,7 +441,7 @@ export default function EditorPage() {
                     for (const item of data.contents) {
                         if (item.type === 'dir') {
                             // Create folder immediately
-                            const folderId = createFolder(parentId, item.name);
+                            const folderId = createFolder(parentId, item.name, { skipAutosave: true });
                             folderCount++;
                             folderMap.set(item.path, folderId);
                             
@@ -576,7 +568,7 @@ export default function EditorPage() {
                                         finalContent = sanitizeContent(fileData.content);
                                     }
                                     
-                                    createFile(fileInfo.parentId, fileInfo.name, finalContent);
+                                    createFile(fileInfo.parentId, fileInfo.name, finalContent, { skipAutosave: true });
                                     fileCount++;
                                 } else if (fileData.isBinary) {
                                     console.log(`Skipping binary file: ${fileInfo.name}`);
