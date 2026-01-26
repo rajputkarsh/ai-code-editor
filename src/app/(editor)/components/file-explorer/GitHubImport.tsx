@@ -84,37 +84,13 @@ export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onI
         }
     };
 
-    const connectGitHub = async () => {
-        try {
-            const response = await fetch('/api/github/auth/url?scope=read');
-            const data = await response.json();
-            
-            if (data.authUrl) {
-                // Open GitHub OAuth in a popup window
-                const width = 600;
-                const height = 700;
-                const left = window.screenX + (window.outerWidth - width) / 2;
-                const top = window.screenY + (window.outerHeight - height) / 2;
-                
-                const popup = window.open(
-                    data.authUrl,
-                    'github-oauth',
-                    `width=${width},height=${height},left=${left},top=${top}`
-                );
-                
-                // Poll for popup close or successful auth
-                const pollInterval = setInterval(async () => {
-                    if (popup?.closed) {
-                        clearInterval(pollInterval);
-                        // Recheck connection status
-                        await checkGitHubStatus();
-                    }
-                }, 1000);
-            }
-        } catch (error) {
-            console.error('Failed to connect GitHub:', error);
-            setError('Failed to connect GitHub');
-        }
+    const connectGitHub = () => {
+        // With Clerk, users must sign in with GitHub via the sign-in page
+        // We can't connect GitHub separately - they need to re-authenticate
+        alert('Please sign out and sign in again using "Continue with GitHub" to enable GitHub integration.');
+        onClose();
+        // Redirect to sign-in page
+        window.location.href = '/sign-in';
     };
 
     const loadRepositories = async () => {
@@ -197,17 +173,27 @@ export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onI
                         <div className="flex flex-col items-center justify-center h-full">
                             <Github className="w-16 h-16 text-neutral-600 mb-4" />
                             <h3 className="text-lg font-medium text-neutral-200 mb-2">
-                                Connect Your GitHub Account
+                                GitHub Account Not Connected
                             </h3>
                             <p className="text-sm text-neutral-400 mb-6 text-center max-w-md">
-                                Connect your GitHub account to import repositories and work with your code.
+                                To use GitHub integration, you need to sign in with GitHub. 
+                                Please sign out and sign in again using the &quot;Continue with GitHub&quot; button.
                             </p>
+                            <div className="bg-blue-900/20 border border-blue-800 rounded-lg p-4 mb-6 max-w-md">
+                                <p className="text-sm text-blue-300 mb-2 font-medium">How to connect GitHub:</p>
+                                <ol className="text-xs text-blue-400 space-y-1 list-decimal list-inside">
+                                    <li>Click &quot;Sign Out&quot; in the top-right corner</li>
+                                    <li>On the sign-in page, click &quot;Continue with GitHub&quot;</li>
+                                    <li>Authorize the application</li>
+                                    <li>Return here to import repositories</li>
+                                </ol>
+                            </div>
                             <button
                                 onClick={connectGitHub}
-                                className="px-6 py-3 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
                             >
                                 <Github className="w-5 h-5" />
-                                Connect GitHub
+                                Go to Sign In
                             </button>
                         </div>
                     ) : selectedRepo ? (

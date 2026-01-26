@@ -12,6 +12,7 @@ import { CodeActionMenu } from '../components/editor/CodeActionMenu';
 import { DiffPreviewModal } from '../components/editor/DiffPreviewModal';
 import { CodeExplanationPanel } from '../components/editor/CodeExplanationPanel';
 import { PromptHistory } from '../components/ai-chat/PromptHistory';
+import { GitHubImport } from '../components/file-explorer/GitHubImport';
 import { useEditorState } from '../stores/editor-state';
 import { useFileSystem } from '../stores/file-system';
 import { useAIChatState } from '../stores/ai-chat-state';
@@ -134,6 +135,7 @@ export default function EditorPage() {
     const [isFileExplorerOpen, setIsFileExplorerOpen] = useState(true);
     const [isAIChatOpen, setIsAIChatOpen] = useState(false);
     const [isPromptHistoryOpen, setIsPromptHistoryOpen] = useState(false);
+    const [isGitHubImportOpen, setIsGitHubImportOpen] = useState(false);
     
     // Phase 2: AI code actions and explanations
     const [isCodeActionMenuOpen, setIsCodeActionMenuOpen] = useState(false);
@@ -376,6 +378,16 @@ export default function EditorPage() {
         
         setDiffPreview(null);
     };
+    
+    /**
+     * Handle GitHub repository import (Phase 2)
+     */
+    const handleGitHubImport = async (repoUrl: string, branch: string) => {
+        console.log('Importing repository:', repoUrl, 'branch:', branch);
+        // TODO: Implement actual repository cloning logic
+        // For now, just show a success message
+        alert(`Repository import started!\n\nRepo: ${repoUrl}\nBranch: ${branch}\n\nNote: Full implementation requires additional backend setup.`);
+    };
 
     return (
         <>
@@ -392,7 +404,7 @@ export default function EditorPage() {
                             onCodeActionsClick={() => setIsCodeActionMenuOpen(true)}
                             onPromptHistoryClick={() => setIsPromptHistoryOpen(true)}
                             onExplainClick={handleExplainCode}
-                            onGitHubClick={() => alert('GitHub integration coming soon')}
+                            onGitHubClick={() => setIsGitHubImportOpen(true)}
                         />
                         <EditorArea />
                         {/* VS Code-style Bottom Bar */}
@@ -447,6 +459,13 @@ export default function EditorPage() {
             <PromptHistory
                 isOpen={isPromptHistoryOpen}
                 onClose={() => setIsPromptHistoryOpen(false)}
+            />
+            
+            {/* Phase 2: GitHub Repository Import */}
+            <GitHubImport
+                isOpen={isGitHubImportOpen}
+                onClose={() => setIsGitHubImportOpen(false)}
+                onImport={handleGitHubImport}
             />
         </>
     );

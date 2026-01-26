@@ -27,10 +27,10 @@ import health from './routes/health';
 import { aiChatApp } from './routes/ai-chat';
 import { workspaceApp } from './routes/workspace';
 import { inlineAIApp } from './routes/inline-ai';
-import { githubApp } from './routes/github';
+import githubClerkApp from './routes/github-clerk'; // Updated to use Clerk OAuth
 
 app.route('/health', health);
 app.route('/ai-chat', aiChatApp);
 app.route('/workspace', workspaceApp);
 app.route('/inline-ai', inlineAIApp);
-app.route('/github', githubApp);
+app.route('/github', githubClerkApp); // Using Clerk-based GitHub integration
