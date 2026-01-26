@@ -17,12 +17,14 @@ import { useFileSystem } from '@/app/(editor)/stores/file-system';
 import { useInlineAI } from '@/app/(editor)/stores/inline-ai-state';
 import { useSelectionState } from '@/app/(editor)/stores/selection-state';
 import { detectLanguage } from '@/lib/file-utils';
+import { useToast } from '@/components/ui/Toast';
 
 interface CodeEditorWithAIProps {
     fileId: string;
 }
 
 export const CodeEditorWithAI: React.FC<CodeEditorWithAIProps> = ({ fileId }) => {
+    const toast = useToast();
     const { files, updateFileContent } = useFileSystem();
     const { selection } = useSelectionState();
     const { setLoadingAction, addPromptToHistory } = useInlineAI();
@@ -90,11 +92,11 @@ export const CodeEditorWithAI: React.FC<CodeEditorWithAIProps> = ({ fileId }) =>
             
         } catch (error) {
             console.error('Code action error:', error);
-            alert('Failed to perform code action. Please try again.');
+            toast.error('Failed to perform code action. Please try again.');
         } finally {
             setLoadingAction(false);
         }
-    }, [file, selection, language, setLoadingAction, addPromptToHistory]);
+    }, [file, selection, language, setLoadingAction, addPromptToHistory, toast]);
     
     /**
      * Apply diff (replace code in editor)

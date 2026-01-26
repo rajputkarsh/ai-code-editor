@@ -13,6 +13,7 @@ import { DiffPreviewModal } from '../components/editor/DiffPreviewModal';
 import { CodeExplanationPanel } from '../components/editor/CodeExplanationPanel';
 import { PromptHistory } from '../components/ai-chat/PromptHistory';
 import { GitHubImport } from '../components/file-explorer/GitHubImport';
+import { useToast } from '@/components/ui/Toast';
 import { useEditorState } from '../stores/editor-state';
 import { useFileSystem } from '../stores/file-system';
 import { useAIChatState } from '../stores/ai-chat-state';
@@ -158,6 +159,7 @@ export default function EditorPage() {
     const { files, updateFileContent } = useFileSystem();
     const { selection, hasSelection } = useSelectionState();
     const { setLoadingAction, setLoadingExplanation, addPromptToHistory } = useInlineAI();
+    const toast = useToast();
 
     /**
      * Handle template selection from AI chat panel
@@ -168,13 +170,13 @@ export default function EditorPage() {
         // Get active file
         const activeTab = tabs.find(t => t.id === activeTabId);
         if (!activeTab) {
-            alert('Please open a file first');
+            toast.warning('Please open a file first');
             return;
         }
 
         const activeFile = files[activeTab.fileId];
         if (!activeFile) {
-            alert('No active file found');
+            toast.error('No active file found');
             return;
         }
 
@@ -231,7 +233,7 @@ export default function EditorPage() {
     const handleCodeAction = async (actionId: string) => {
         const activeTab = tabs.find(t => t.id === activeTabId);
         if (!activeTab) {
-            alert('Please open a file first');
+            toast.warning('Please open a file first');
             return;
         }
         
@@ -281,7 +283,7 @@ export default function EditorPage() {
             
         } catch (error) {
             console.error('Code action error:', error);
-            alert('Failed to perform code action. Please try again.');
+            toast.error('Failed to perform code action. Please try again.');
         } finally {
             setLoadingAction(false);
         }
@@ -293,7 +295,7 @@ export default function EditorPage() {
     const handleExplainCode = async () => {
         const activeTab = tabs.find(t => t.id === activeTabId);
         if (!activeTab) {
-            alert('Please open a file first');
+            toast.warning('Please open a file first');
             return;
         }
         
@@ -342,7 +344,7 @@ export default function EditorPage() {
             
         } catch (error) {
             console.error('Explanation error:', error);
-            alert('Failed to generate explanation. Please try again.');
+            toast.error('Failed to generate explanation. Please try again.');
         } finally {
             setLoadingExplanation(false);
         }
@@ -386,7 +388,7 @@ export default function EditorPage() {
         console.log('Importing repository:', repoUrl, 'branch:', branch);
         // TODO: Implement actual repository cloning logic
         // For now, just show a success message
-        alert(`Repository import started!\n\nRepo: ${repoUrl}\nBranch: ${branch}\n\nNote: Full implementation requires additional backend setup.`);
+        toast.info(`Repository import started!\n\nRepo: ${repoUrl}\nBranch: ${branch}\n\nNote: Full implementation requires additional backend setup.`, 8000);
     };
 
     return (

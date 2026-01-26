@@ -36,8 +36,9 @@ export async function getGitHubTokenFromClerk(): Promise<string | null> {
     const user = await clerk.users.getUser(userId);
     
     // Find GitHub OAuth connection
+    // Note: Clerk uses 'oauth_github' as the provider identifier, not 'github'
     const githubAccount = user.externalAccounts?.find(
-      (account) => account.provider === 'github'
+      (account) => account.provider === 'oauth_github'
     );
     
     if (!githubAccount) {
@@ -74,8 +75,9 @@ export async function getGitHubUserFromClerk(): Promise<GitHubUserInfo | null> {
     const clerk = await clerkClient();
     const user = await clerk.users.getUser(userId);
     
+    // Note: Clerk uses 'oauth_github' as the provider identifier, not 'github'
     const githubAccount = user.externalAccounts?.find(
-      (account) => account.provider === 'github'
+      (account) => account.provider === 'oauth_github'
     );
     
     if (!githubAccount) {
@@ -114,8 +116,9 @@ export async function hasGitHubConnected(): Promise<boolean> {
     const clerk = await clerkClient();
     const user = await clerk.users.getUser(userId);
     
+    // Note: Clerk uses 'oauth_github' as the provider identifier, not 'github'
     const hasGitHub = user.externalAccounts?.some(
-      (account) => account.provider === 'github'
+      (account) => account.provider === 'oauth_github'
     );
     
     return hasGitHub || false;

@@ -13,6 +13,7 @@
 import React, { useState, useEffect } from 'react';
 import { Github, X, Check, Loader2, AlertCircle } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
+import { useToast } from '@/components/ui/Toast';
 
 interface GitHubImportProps {
     isOpen: boolean;
@@ -39,6 +40,7 @@ interface GitHubBranch {
 }
 
 export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onImport }) => {
+    const toast = useToast();
     const [isConnected, setIsConnected] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [githubUsername, setGithubUsername] = useState<string | null>(null);
@@ -87,10 +89,12 @@ export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onI
     const connectGitHub = () => {
         // With Clerk, users must sign in with GitHub via the sign-in page
         // We can't connect GitHub separately - they need to re-authenticate
-        alert('Please sign out and sign in again using "Continue with GitHub" to enable GitHub integration.');
+        toast.info('Please sign out and sign in again using "Continue with GitHub" to enable GitHub integration.', 8000);
         onClose();
-        // Redirect to sign-in page
-        window.location.href = '/sign-in';
+        // Redirect to sign-in page after a brief delay
+        setTimeout(() => {
+            window.location.href = '/sign-in';
+        }, 1000);
     };
 
     const loadRepositories = async () => {
@@ -316,7 +320,7 @@ export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onI
                     
                     {error && (
                         <div className="mt-4 p-3 bg-red-900/20 border border-red-800 rounded-lg flex items-center gap-2 text-red-400">
-                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                            <AlertCircle className="w-4 h-4 shrink-0" />
                             <span className="text-sm">{error}</span>
                         </div>
                     )}
