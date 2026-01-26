@@ -16,6 +16,7 @@ import { GitHubImport } from '../components/file-explorer/GitHubImport';
 import { useToast } from '@/components/ui/Toast';
 import { useEditorState } from '../stores/editor-state';
 import { useFileSystem } from '../stores/file-system';
+import { useWorkspace } from '../stores/workspace-provider';
 import { useAIChatState } from '../stores/ai-chat-state';
 import { useSelectionState } from '../stores/selection-state';
 import { useInlineAI } from '../stores/inline-ai-state';
@@ -137,6 +138,7 @@ export default function EditorPage() {
     const [isAIChatOpen, setIsAIChatOpen] = useState(false);
     const [isPromptHistoryOpen, setIsPromptHistoryOpen] = useState(false);
     const [isGitHubImportOpen, setIsGitHubImportOpen] = useState(false);
+    const [isImportingRepo, setIsImportingRepo] = useState(false);
     
     // Phase 2: AI code actions and explanations
     const [isCodeActionMenuOpen, setIsCodeActionMenuOpen] = useState(false);
@@ -157,6 +159,7 @@ export default function EditorPage() {
     const { addMessage, setContextInfo } = useAIChatState();
     const { activeTabId, tabs } = useEditorState();
     const { files, updateFileContent, createFile, createFolder, rootId } = useFileSystem();
+    const { createNewWorkspace } = useWorkspace();
     const { selection, hasSelection } = useSelectionState();
     const { setLoadingAction, setLoadingExplanation, addPromptToHistory } = useInlineAI();
     const toast = useToast();
@@ -383,8 +386,12 @@ export default function EditorPage() {
     
     /**
      * Handle GitHub repository import (Phase 2)
+     * Creates a new clean workspace and imports the repository into it
      */
     const handleGitHubImport = async (repoUrl: string, branch: string) => {
+        setIsImportingRepo(true);
+        setIsGitHubImportOpen(false); // Close modal to show full page loader
+        
         try {
             // Parse GitHub URL to extract owner and repo
             const urlMatch = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
@@ -396,16 +403,26 @@ export default function EditorPage() {
             const [, owner, repoName] = urlMatch;
             const cleanRepoName = repoName.replace(/\.git$/, '');
             
-            toast.info(`Importing ${owner}/${cleanRepoName} from branch ${branch}...`);
+            toast.info(`🔄 Creating new workspace for ${owner}/${cleanRepoName}...`, 3000);
             
-            // Create root folder for the repository
-            const repoFolderId = createFolder(rootId, cleanRepoName);
+            // Create a new clean workspace (this clears all existing files)
+            await createNewWorkspace(cleanRepoName);
             
-            // Recursively fetch and create files/folders
+            // Wait for the workspace to be fully created, VFS to be ready, and React state to update
+            await new Promise(resolve => setTimeout(resolve, 1200));
+            
+            toast.info(`📥 Importing ${owner}/${cleanRepoName} from branch ${branch}...`, 3000);
+            
+            // Counter for progress
             let fileCount = 0;
             let folderCount = 0;
             
-            const fetchContents = async (path: string, parentId: string): Promise<void> => {
+            // Map to store folder paths to their IDs for parallel processing
+            const folderMap = new Map<string, string>();
+            folderMap.set('', rootId); // Root path maps to rootId
+            
+            // Recursively fetch directory structure and collect all files
+            const fetchContents = async (path: string, parentId: string): Promise<Array<{path: string, parentId: string, name: string}>> => {
                 const response = await fetch(
                     `/api/github/repository/${owner}/${cleanRepoName}/contents?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(branch)}`
                 );
@@ -416,35 +433,79 @@ export default function EditorPage() {
                 }
                 
                 const data = await response.json();
+                const filePromises: Array<{path: string, parentId: string, name: string}> = [];
                 
                 // Handle directory listing
                 if (data.type === 'dir' && data.contents) {
+                    // First, create all folders in this directory
+                    const subDirPromises = [];
+                    
                     for (const item of data.contents) {
                         if (item.type === 'dir') {
-                            // Create folder and recursively fetch its contents
+                            // Create folder immediately
                             const folderId = createFolder(parentId, item.name);
                             folderCount++;
-                            await fetchContents(item.path, folderId);
+                            folderMap.set(item.path, folderId);
+                            
+                            // Queue up subdirectory fetch
+                            subDirPromises.push(fetchContents(item.path, folderId));
                         } else if (item.type === 'file') {
-                            // Fetch file content
+                            // Add file to the list to be fetched in parallel
+                            filePromises.push({
+                                path: item.path,
+                                parentId: parentId,
+                                name: item.name
+                            });
+                        }
+                    }
+                    
+                    // Recursively fetch subdirectories in parallel
+                    const subDirResults = await Promise.all(subDirPromises);
+                    
+                    // Flatten and combine file lists from subdirectories
+                    for (const subFiles of subDirResults) {
+                        filePromises.push(...subFiles);
+                    }
+                }
+                
+                return filePromises;
+            };
+            
+            // Fetch all directory structure and get list of all files
+            const allFiles = await fetchContents('', rootId);
+            
+            toast.info(`📦 Downloading ${allFiles.length} files...`, 2000);
+            
+            // Fetch and create files in parallel batches (10 at a time to avoid overwhelming the API)
+            const BATCH_SIZE = 10;
+            for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
+                const batch = allFiles.slice(i, i + BATCH_SIZE);
+                
+                await Promise.all(
+                    batch.map(async (fileInfo) => {
+                        try {
                             const fileResponse = await fetch(
-                                `/api/github/repository/${owner}/${cleanRepoName}/contents?path=${encodeURIComponent(item.path)}&ref=${encodeURIComponent(branch)}`
+                                `/api/github/repository/${owner}/${cleanRepoName}/contents?path=${encodeURIComponent(fileInfo.path)}&ref=${encodeURIComponent(branch)}`
                             );
                             
                             if (fileResponse.ok) {
                                 const fileData = await fileResponse.json();
                                 if (fileData.type === 'file' && fileData.content) {
-                                    createFile(parentId, item.name, fileData.content);
+                                    createFile(fileInfo.parentId, fileInfo.name, fileData.content);
                                     fileCount++;
                                 }
                             }
+                        } catch (err) {
+                            console.error(`Failed to fetch file ${fileInfo.path}:`, err);
                         }
-                    }
+                    })
+                );
+                
+                // Update progress
+                if (allFiles.length > 20) {
+                    toast.info(`📥 Downloaded ${Math.min(i + BATCH_SIZE, allFiles.length)}/${allFiles.length} files...`, 1000);
                 }
-            };
-            
-            // Start fetching from root
-            await fetchContents('', repoFolderId);
+            }
             
             toast.success(
                 `✅ Repository imported successfully!\n\n` +
@@ -452,12 +513,14 @@ export default function EditorPage() {
                 5000
             );
             
-        } catch (error) {
+       } catch (error) {
             console.error('Failed to import repository:', error);
             toast.error(
                 `❌ Failed to import repository: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 5000
             );
+        } finally {
+            setIsImportingRepo(false);
         }
     };
 
@@ -536,9 +599,48 @@ export default function EditorPage() {
             {/* Phase 2: GitHub Repository Import */}
             <GitHubImport
                 isOpen={isGitHubImportOpen}
-                onClose={() => setIsGitHubImportOpen(false)}
+                onClose={() => {
+                    // Don't allow closing while import is in progress
+                    if (!isImportingRepo) {
+                        setIsGitHubImportOpen(false);
+                    }
+                }}
                 onImport={handleGitHubImport}
+                isImporting={isImportingRepo}
             />
+            
+            {/* Full Page Loading Overlay - Repository Import */}
+            {isImportingRepo && (
+                <div className="fixed inset-0 bg-[#1e1e1e]/98 z-9999 flex flex-col items-center justify-center backdrop-blur-md">
+                    <div className="flex flex-col items-center space-y-6">
+                        {/* Spinner */}
+                        <div className="relative">
+                            <div className="w-20 h-20 border-4 border-neutral-700 border-t-blue-500 rounded-full animate-spin"></div>
+                            <div className="absolute inset-0 w-20 h-20 border-4 border-transparent border-r-blue-400 rounded-full animate-spin" style={{ animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
+                        </div>
+                        
+                        {/* Text Content */}
+                        <div className="text-center space-y-3">
+                            <h2 className="text-2xl font-semibold text-neutral-100">
+                                Importing Repository
+                            </h2>
+                            <p className="text-base text-neutral-400 max-w-md">
+                                Creating workspace and downloading files...
+                            </p>
+                            <p className="text-sm text-neutral-500">
+                                This may take a few moments. Please don't close this window.
+                            </p>
+                        </div>
+                        
+                        {/* Progress Indicator */}
+                        <div className="flex items-center space-x-2 text-neutral-500">
+                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 }

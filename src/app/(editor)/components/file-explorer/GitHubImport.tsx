@@ -19,6 +19,7 @@ interface GitHubImportProps {
     isOpen: boolean;
     onClose: () => void;
     onImport: (repoUrl: string, branch: string) => void;
+    isImporting?: boolean;
 }
 
 interface GitHubRepo {
@@ -39,7 +40,7 @@ interface GitHubBranch {
     };
 }
 
-export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onImport }) => {
+export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onImport, isImporting = false }) => {
     const toast = useToast();
     const [isConnected, setIsConnected] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -144,13 +145,22 @@ export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onI
     const handleImport = () => {
         if (selectedRepo && selectedBranch) {
             onImport(selectedRepo.html_url, selectedBranch);
-            onClose();
+            // Don't close immediately - let parent handle closing after import completes
         }
     };
 
+    const handleClose = () => {
+        // Prevent closing during import
+        if (isImporting) {
+            toast.info('Please wait for the import to complete...', 2000);
+            return;
+        }
+        onClose();
+    };
+
     return (
-        <Modal isOpen={isOpen} onClose={onClose} size="large">
-            <div className="flex flex-col h-[80vh]">
+        <Modal isOpen={isOpen} onClose={handleClose} size="large">
+            <div className="flex flex-col h-[80vh] relative">
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-neutral-700">
                     <div className="flex items-center gap-2">
@@ -160,8 +170,9 @@ export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onI
                         </h2>
                     </div>
                     <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-neutral-800 rounded-lg transition-colors"
+                        onClick={handleClose}
+                        disabled={isImporting}
+                        className="p-2 hover:bg-neutral-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <X className="w-5 h-5 text-neutral-400" />
                     </button>
@@ -210,7 +221,8 @@ export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onI
                                         setSelectedBranch(null);
                                         setBranches([]);
                                     }}
-                                    className="text-sm text-blue-400 hover:text-blue-300"
+                                    disabled={isImporting}
+                                    className="text-sm text-blue-400 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     ← Back to repositories
                                 </button>
@@ -243,12 +255,14 @@ export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onI
                                             <button
                                                 key={branch.name}
                                                 onClick={() => setSelectedBranch(branch.name)}
+                                                disabled={isImporting}
                                                 className={`
                                                     w-full p-3 rounded-lg border transition-colors text-left
                                                     ${selectedBranch === branch.name
                                                         ? 'border-blue-500 bg-blue-900/20'
                                                         : 'border-neutral-700 hover:border-neutral-600 bg-neutral-800'
                                                     }
+                                                    disabled:opacity-50 disabled:cursor-not-allowed
                                                 `}
                                             >
                                                 <div className="flex items-center justify-between">
@@ -289,7 +303,8 @@ export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onI
                                         <button
                                             key={repo.id}
                                             onClick={() => selectRepository(repo)}
-                                            className="w-full p-4 rounded-lg border border-neutral-700 hover:border-neutral-600 bg-neutral-800 hover:bg-neutral-750 transition-colors text-left"
+                                            disabled={isImporting}
+                                            className="w-full p-4 rounded-lg border border-neutral-700 hover:border-neutral-600 bg-neutral-800 hover:bg-neutral-750 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             <div className="flex items-start justify-between">
                                                 <div className="flex-1">
@@ -335,9 +350,10 @@ export const GitHubImport: React.FC<GitHubImportProps> = ({ isOpen, onClose, onI
                             </p>
                             <button
                                 onClick={handleImport}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                                disabled={isImporting}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                Import Repository
+                                {isImporting ? 'Importing...' : 'Import Repository'}
                             </button>
                         </div>
                     </div>
