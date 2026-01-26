@@ -1,150 +1,223 @@
-# Phase 1.5 – Workspace Persistence Closure & Validation Prompt
+# PHASE 2 – Inline AI & GitHub Foundations Execution Prompt
 
-You are a **senior platform engineer** performing the **final closure step** for **Phase 1.5: Workspace Persistence, Autosave & Sync**.
+You are a **senior full-stack engineer** implementing **PHASE 2: Inline AI & GitHub Foundations** for a **Next.js (App Router) web-based code editor**.
 
-This prompt is about **verification, enforcement, and hard boundaries** — not adding new features.
+Previous phases completed:
+- Core Editor (Monaco, workspace, persistence)
+- Authentication (Clerk)
+- Workspace Persistence & Sync
+- Contextual AI Chat (Gemini)
 
----
+This phase introduces **inline AI coding** and **GitHub repository connectivity**.
 
-## 🎯 CLOSURE GOAL
-
-Formally **close Phase 1.5** by:
-- Verifying all guarantees are met
-- Enforcing explicit non-goals
-- Ensuring no accidental scope creep
-- Making the system safe to build on
-
-No new functionality should be introduced.
+You must follow all existing architectural boundaries strictly.
 
 ---
 
-## 🧱 NON-GOALS ENFORCEMENT (CRITICAL)
+## 🎯 PHASE GOAL
 
-Verify and explicitly ensure that the following are **NOT implemented** anywhere in the codebase:
+Enable users to:
+- Receive **inline AI coding assistance**
+- Perform **safe, previewable AI code actions**
+- Connect and work with **real GitHub repositories**
+- See **Git-aware editor state**
 
-- ❌ Offline-first synchronization
-- ❌ Version history or time-travel UI
-- ❌ Merge conflict detection or handling
-- ❌ Real-time collaboration or presence
-
-### Required Action
-- If partial or accidental implementations exist:
-  - Remove them, OR
-  - Guard them behind comments stating “Out of Scope for Phase 1.5”
+This phase must **not introduce agent autonomy** or unsafe automation.
 
 ---
 
-## ✅ PHASE EXIT CRITERIA VALIDATION
-
-Verify each of the following **explicitly**:
+## 🧱 SCOPE (ONLY THIS PHASE)
 
 ---
 
-### 1️⃣ Workspace Persistence Across Reloads
+## 1️⃣ Inline AI Capabilities
 
-- Reloading the browser restores:
-  - File tree
-  - File contents
-  - Open tabs
-  - Active file
-  - Cursor position
-  - Editor layout
-- No manual user action required
+### Requirements
+- Inline AI code completions inside Monaco
+- Suggestions triggered via:
+  - Keyboard shortcut (e.g. `Cmd/Ctrl + Enter`)
+- Inline ghost-text or suggestion overlay
 
----
+### Behavior
+- User can:
+  - Accept suggestion
+  - Reject suggestion
+- Suggestions must:
+  - Be contextual (cursor + file)
+  - Never auto-apply without confirmation
 
-### 2️⃣ Cross-Device Resume
-
-- User logs in on a second device
-- Most recent workspace state loads automatically
-- Server state is the single source of truth
-
----
-
-### 3️⃣ Autosave & Data Loss Prevention
-
-- Autosave triggers on:
-  - File edits
-  - Structural changes
-- Debounce works correctly
-- Crashes, reloads, or network failures do **not** lose work
+### Technical Rules
+- Inline AI must:
+  - Use Gemini (hosted)
+  - Stream tokens
+  - Be cancelable
+- No background jobs (no Inngest here)
 
 ---
 
-### 4️⃣ Storage & Workspace Limits Enforcement
+## 2️⃣ AI Code Actions (Safe & Explicit)
 
-- Workspace count limits enforced server-side
-- Storage size limits enforced server-side
-- Enforcement is:
-  - Silent
-  - Deterministic
-  - Secure
-- No UI required for limits
+### Supported Actions
+Right-click or command-palette actions:
+- Refactor function
+- Convert file to TypeScript
+- Add comments
+- Improve performance
 
----
+### Safety Rules
+- AI must **never** modify files directly
+- All actions must:
+  - Generate a diff
+  - Show preview
+  - Require explicit user approval
 
-## 🔐 SECURITY & ISOLATION CHECKS
-
-Verify:
-- All workspace reads/writes are user-scoped
-- Workspace ownership is validated on every API call
-- No cross-user access paths exist
-- Auth checks are server-side only
-
----
-
-## 🧠 ARCHITECTURAL INTEGRITY CHECK
-
-Confirm:
-- Editor components do NOT:
-  - Call persistence APIs directly
-  - Know about storage or limits
-- Persistence logic remains isolated under: /lib/workspace
-- APIs are implemented only via **Hono**
-- Auth is provided via **Clerk**, but not coupled
+### Implementation
+- Generate patch/diff from AI output
+- Apply changes only after user confirms
 
 ---
 
-## 🧪 REQUIRED ARTIFACTS
+## 3️⃣ Explain & Trace
 
-Ensure the following exist before closing the phase:
-- Clear comments documenting:
-- Autosave guarantees
-- Draft recovery assumptions
-- Source-of-truth rules
-- No TODOs that imply unfinished core behavior
-- No commented-out experimental sync logic
+### Scope
+Implement read-only explainability tools:
+- Explain this file
+- Explain this function
+- Step-by-step logic explanation
 
----
-
-## 🚫 FINAL CONSTRAINTS
-
-Do NOT:
-- Add UX polish
-- Add collaboration hooks
-- Add GitHub automation
-- Add billing logic
-- Add analytics
-
-If something seems “almost useful,” **leave a comment and stop**.
+### Rules
+- No code modification
+- Explanation only
+- Uses same context pipeline as AI chat
 
 ---
 
-## ✅ PHASE COMPLETION DECLARATION
+## 4️⃣ Prompt History
 
-This phase is considered **complete** only if:
-- All exit criteria are met
-- All non-goals are enforced
-- No editor behavior changed
-- Infrastructure is stable and predictable
+### Requirements
+- Store AI prompts locally per session
+- Support:
+  - Viewing past prompts
+  - Re-running previous actions
 
-Once complete, **lock this phase** and move forward.
+### Constraints
+- No cloud persistence yet
+- No analytics
+- Session-scoped only
+
+---
+
+## 5️⃣ GitHub Authentication
+
+### Requirements
+- OAuth-based GitHub authentication
+- Use GitHub OAuth **in addition to Clerk**
+- Permission scopes:
+  - Read-only
+  - Read & Write
+
+### Rules
+- GitHub auth is:
+  - Optional per user
+  - Explicitly granted
+- Token storage must be:
+  - Server-side only
+  - User-scoped
+
+---
+
+## 6️⃣ Repository Import & Sync
+
+### Supported Imports
+- GitHub repository picker
+- Public GitHub repo URL
+
+### Import Options
+- Branch selection
+- Shallow clone only
+
+### Behavior
+- Imported repo becomes a workspace
+- GitHub repo is treated as:
+  - External source of truth
+  - Not auto-synced
+
+---
+
+## 7️⃣ Git Awareness in Editor
+
+### Editor Indicators
+- Modified files
+- New files
+- Deleted files
+
+### Diff Support
+- Diff vs HEAD
+- Per-file diff view
+
+### Change Tracking
+- Track local changes separately from GitHub
+- No auto-commit
+- No auto-push
+
+---
+
+## 🔐 SECURITY & BOUNDARIES
+
+- GitHub tokens:
+  - Never exposed to client
+  - Never logged
+- Repo access:
+  - Validated per request
+- Workspace ownership enforced
+
+---
+
+## 🚫 OUT OF SCOPE (DO NOT IMPLEMENT)
+
+- Agent mode
+- Background AI jobs
+- Automatic commits or PRs
+- GitHub webhooks
+- Real-time collaboration
+- Billing enforcement
+- Usage analytics
+
+---
+
+## 🧪 QUALITY REQUIREMENTS
+
+- TypeScript strict
+- No `any`
+- Clear separation between:
+  - Editor
+  - AI logic
+  - GitHub logic
+- Comments explaining:
+  - Why changes are non-destructive
+  - GitHub source-of-truth rules
+
+---
+
+## ✅ EXPECTED OUTPUT
+
+At the end of this phase:
+1. Inline AI suggestions work safely
+2. AI code actions show diffs before apply
+3. Files can be explained and traced
+4. GitHub repositories can be imported
+5. Editor shows Git-aware file status
+6. No code changes happen without user consent
 
 ---
 
 ## 🧠 FINAL INSTRUCTION
 
-This prompt exists to **prevent over-engineering**.
+This phase is about **augmenting developers**, not replacing them.
 
-Finish strong, stop cleanly, and do not extend the scope.
+Optimize for:
+- Trust
+- Visibility
+- Reversibility
 
+Do not introduce autonomy or background agents yet.
