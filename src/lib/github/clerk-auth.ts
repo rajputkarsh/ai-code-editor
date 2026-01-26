@@ -19,6 +19,10 @@ export interface GitHubUserInfo {
 /**
  * Get GitHub OAuth token from Clerk
  * 
+ * IMPORTANT: To access the OAuth token, you must:
+ * 1. Enable "repo" scope in Clerk Dashboard (GitHub OAuth settings)
+ * 2. Use Clerk's getUserOauthAccessToken method to retrieve the token
+ * 
  * This assumes the user signed in with GitHub via Clerk.
  * If they used a different provider, this will return null.
  */
@@ -45,16 +49,50 @@ export async function getGitHubTokenFromClerk(): Promise<string | null> {
       console.log('User has no GitHub account connected');
       return null;
     }
+
+    console.log('githubAccount found:', {
+      provider: githubAccount.provider,
+      approvedScopes: (githubAccount as any).approvedScopes,
+    });
     
-    // Get access token
-    const accessToken = (githubAccount as any).accessToken;
-    
-    if (!accessToken) {
-      console.log('GitHub account has no access token');
+    // Check if repo scope is present
+    const account = githubAccount as any;
+    if (!account.approvedScopes?.includes('repo')) {
+      console.error('❌ Missing "repo" scope!');
+      console.error('Current scopes:', account.approvedScopes);
+      console.error('Required scopes: repo, read:user, user:email');
+      console.error('\nTo fix this:');
+      console.error('1. Go to Clerk Dashboard → GitHub OAuth settings');
+      console.error('2. Add "repo" scope');
+      console.error('3. Save and re-authenticate (sign out and sign in again)');
       return null;
     }
     
-    return accessToken;
+    // Use Clerk's method to get OAuth access token
+    try {
+      const tokenResponse = await clerk.users.getUserOauthAccessToken(
+        userId,
+        'oauth_github'
+      );
+      
+      // The response is paginated, access the data array
+      const tokens = (tokenResponse as any).data || tokenResponse;
+      
+      if (Array.isArray(tokens) && tokens.length > 0 && tokens[0].token) {
+        console.log('✅ GitHub token retrieved successfully');
+        return tokens[0].token;
+      }
+      
+      console.error('❌ No token found in response');
+      console.error('Response structure:', tokenResponse);
+      return null;
+    } catch (tokenError: any) {
+      console.error('❌ Failed to retrieve OAuth token:', tokenError.message);
+      console.error('This usually means:');
+      console.error('1. The "repo" scope is not configured in Clerk');
+      console.error('2. The user needs to re-authenticate after adding scopes');
+      return null;
+    }
   } catch (error) {
     console.error('Error fetching GitHub token from Clerk:', error);
     return null;
