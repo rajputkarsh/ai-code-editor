@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
-import { loggerMiddleware, corsMiddleware, authMiddleware, notFoundHandler, errorHandler } from './middleware';
+import { loggerMiddleware, corsMiddleware, authMiddleware, notFoundHandler, errorHandler, AppVariables } from './middleware';
 
-// Initialize Hono app
-export const app = new Hono().basePath('/api');
+// Initialize Hono app with type-safe context
+export const app = new Hono<{ Variables: AppVariables }>().basePath('/api');
 
 // Global middleware
 app.use('*', loggerMiddleware);
@@ -26,7 +26,11 @@ app.onError(errorHandler);
 import health from './routes/health';
 import { aiChatApp } from './routes/ai-chat';
 import { workspaceApp } from './routes/workspace';
+import { inlineAIApp } from './routes/inline-ai';
+import { githubApp } from './routes/github';
 
 app.route('/health', health);
 app.route('/ai-chat', aiChatApp);
 app.route('/workspace', workspaceApp);
+app.route('/inline-ai', inlineAIApp);
+app.route('/github', githubApp);

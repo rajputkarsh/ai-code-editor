@@ -3,6 +3,13 @@ import { logger } from 'hono/logger';
 import { cors } from 'hono/cors';
 import { auth } from '@clerk/nextjs/server';
 
+/**
+ * Extend Hono context to include userId
+ */
+export type AppVariables = {
+    userId: string;
+};
+
 export const loggerMiddleware = logger();
 export const corsMiddleware = cors();
 

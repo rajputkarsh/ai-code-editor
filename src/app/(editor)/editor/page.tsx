@@ -8,10 +8,15 @@ import { FileExplorer } from '../components/file-explorer/FileExplorer';
 import { EditorTabs } from '../components/editor/EditorTabs';
 import { LazyCodeEditor } from '../components/editor/LazyCodeEditor';
 import { LazyAIChatPanel } from '../components/ai-chat/LazyAIChatPanel';
+import { CodeActionMenu } from '../components/editor/CodeActionMenu';
+import { DiffPreviewModal } from '../components/editor/DiffPreviewModal';
+import { CodeExplanationPanel } from '../components/editor/CodeExplanationPanel';
+import { PromptHistory } from '../components/ai-chat/PromptHistory';
 import { useEditorState } from '../stores/editor-state';
 import { useFileSystem } from '../stores/file-system';
 import { useAIChatState } from '../stores/ai-chat-state';
 import { useSelectionState } from '../stores/selection-state';
+import { useInlineAI } from '../stores/inline-ai-state';
 import { PromptTemplate } from '@/lib/ai/prompt-templates';
 import { ChatContext } from '@/lib/ai/types';
 import { detectLanguage } from '@/lib/file-utils';
@@ -128,11 +133,29 @@ export default function EditorPage() {
     // Panel visibility state (single source of truth)
     const [isFileExplorerOpen, setIsFileExplorerOpen] = useState(true);
     const [isAIChatOpen, setIsAIChatOpen] = useState(false);
+    const [isPromptHistoryOpen, setIsPromptHistoryOpen] = useState(false);
+    
+    // Phase 2: AI code actions and explanations
+    const [isCodeActionMenuOpen, setIsCodeActionMenuOpen] = useState(false);
+    const [codeActionMenuPosition, setCodeActionMenuPosition] = useState({ x: 0, y: 0 });
+    const [diffPreview, setDiffPreview] = useState<{
+        action: string;
+        originalCode: string;
+        modifiedCode: string;
+        isSelection: boolean;
+    } | null>(null);
+    const [explanationData, setExplanationData] = useState<{
+        code: string;
+        explanation: string;
+        fileName: string;
+        scope: 'file' | 'function' | 'selection';
+    } | null>(null);
 
     const { addMessage, setContextInfo } = useAIChatState();
     const { activeTabId, tabs } = useEditorState();
-    const { files } = useFileSystem();
+    const { files, updateFileContent } = useFileSystem();
     const { selection, hasSelection } = useSelectionState();
+    const { setLoadingAction, setLoadingExplanation, addPromptToHistory } = useInlineAI();
 
     /**
      * Handle template selection from AI chat panel
@@ -199,32 +222,232 @@ export default function EditorPage() {
         // Open panel if not already open
         setIsAIChatOpen(true);
     };
+    
+    /**
+     * Handle code action request (Phase 2)
+     */
+    const handleCodeAction = async (actionId: string) => {
+        const activeTab = tabs.find(t => t.id === activeTabId);
+        if (!activeTab) {
+            alert('Please open a file first');
+            return;
+        }
+        
+        const activeFile = files[activeTab.fileId];
+        if (!activeFile) return;
+        
+        setLoadingAction(true);
+        
+        try {
+            const targetCode = selection?.text || activeFile.content || '';
+            const isSelection = !!selection?.text;
+            const language = detectLanguage(activeFile.name);
+            
+            const response = await fetch('/api/inline-ai/code-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: actionId,
+                    fileName: activeFile.name,
+                    language,
+                    code: activeFile.content || '',
+                    selectedCode: selection?.text,
+                }),
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to perform code action');
+            }
+            
+            const data = await response.json();
+            
+            // Show diff preview
+            setDiffPreview({
+                action: actionId,
+                originalCode: data.originalCode,
+                modifiedCode: data.modifiedCode,
+                isSelection,
+            });
+            
+            // Add to history
+            addPromptToHistory({
+                type: 'code-action',
+                prompt: `Code action: ${actionId}`,
+                response: data.modifiedCode,
+                metadata: { fileName: activeFile.name, action: actionId },
+            });
+            
+        } catch (error) {
+            console.error('Code action error:', error);
+            alert('Failed to perform code action. Please try again.');
+        } finally {
+            setLoadingAction(false);
+        }
+    };
+    
+    /**
+     * Handle code explanation request (Phase 2)
+     */
+    const handleExplainCode = async () => {
+        const activeTab = tabs.find(t => t.id === activeTabId);
+        if (!activeTab) {
+            alert('Please open a file first');
+            return;
+        }
+        
+        const activeFile = files[activeTab.fileId];
+        if (!activeFile) return;
+        
+        setLoadingExplanation(true);
+        
+        try {
+            const targetCode = selection?.text || activeFile.content || '';
+            const scope = selection?.text ? 'selection' : 'file';
+            const language = detectLanguage(activeFile.name);
+            
+            const response = await fetch('/api/inline-ai/explain', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fileName: activeFile.name,
+                    language,
+                    code: targetCode,
+                    scope,
+                }),
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to get explanation');
+            }
+            
+            const data = await response.json();
+            
+            // Show explanation panel
+            setExplanationData({
+                code: targetCode,
+                explanation: data.explanation,
+                fileName: activeFile.name,
+                scope,
+            });
+            
+            // Add to history
+            addPromptToHistory({
+                type: 'explain',
+                prompt: `Explain ${scope}: ${activeFile.name}`,
+                response: data.explanation,
+                metadata: { fileName: activeFile.name, scope },
+            });
+            
+        } catch (error) {
+            console.error('Explanation error:', error);
+            alert('Failed to generate explanation. Please try again.');
+        } finally {
+            setLoadingExplanation(false);
+        }
+    };
+    
+    /**
+     * Apply diff (replace code in editor)
+     */
+    const handleApplyDiff = () => {
+        if (!diffPreview) return;
+        
+        const activeTab = tabs.find(t => t.id === activeTabId);
+        if (!activeTab) return;
+        
+        const activeFile = files[activeTab.fileId];
+        if (!activeFile) return;
+        
+        if (diffPreview.isSelection && selection) {
+            // Replace selected text with modified code
+            const content = activeFile.content || '';
+            const lines = content.split('\n');
+            
+            // Replace the selected lines
+            const before = lines.slice(0, selection.startLine - 1).join('\n');
+            const after = lines.slice(selection.endLine).join('\n');
+            const newContent = before + (before ? '\n' : '') + diffPreview.modifiedCode + (after ? '\n' : '') + after;
+            
+            updateFileContent(activeTab.fileId, newContent);
+        } else {
+            // Replace entire file content
+            updateFileContent(activeTab.fileId, diffPreview.modifiedCode);
+        }
+        
+        setDiffPreview(null);
+    };
 
     return (
-        <EditorLayout
-            sidebar={<FileExplorer />}
-            editor={
-                <div className="flex flex-col h-full">
-                    {/* VS Code-style Toolbar */}
-                    <EditorToolbar
-                        isFileExplorerOpen={isFileExplorerOpen}
-                        isAIChatOpen={isAIChatOpen}
-                        onFileExplorerToggle={() => setIsFileExplorerOpen(!isFileExplorerOpen)}
-                        onAIChatToggle={() => setIsAIChatOpen(!isAIChatOpen)}
+        <>
+            <EditorLayout
+                sidebar={<FileExplorer />}
+                editor={
+                    <div className="flex flex-col h-full">
+                        {/* VS Code-style Toolbar */}
+                        <EditorToolbar
+                            isFileExplorerOpen={isFileExplorerOpen}
+                            isAIChatOpen={isAIChatOpen}
+                            onFileExplorerToggle={() => setIsFileExplorerOpen(!isFileExplorerOpen)}
+                            onAIChatToggle={() => setIsAIChatOpen(!isAIChatOpen)}
+                            onCodeActionsClick={() => setIsCodeActionMenuOpen(true)}
+                            onPromptHistoryClick={() => setIsPromptHistoryOpen(true)}
+                            onExplainClick={handleExplainCode}
+                            onGitHubClick={() => alert('GitHub integration coming soon')}
+                        />
+                        <EditorArea />
+                        {/* VS Code-style Bottom Bar */}
+                        <EditorBottomBar />
+                    </div>
+                }
+                aiChat={isAIChatOpen && (
+                    <LazyAIChatPanel 
+                        onTemplateSelect={handleTemplateSelect}
+                        onClose={() => setIsAIChatOpen(false)}
                     />
-                    <EditorArea />
-                    {/* VS Code-style Bottom Bar */}
-                    <EditorBottomBar />
-                </div>
-            }
-            aiChat={isAIChatOpen && (
-                <LazyAIChatPanel 
-                    onTemplateSelect={handleTemplateSelect}
-                    onClose={() => setIsAIChatOpen(false)}
+                )}
+                isSidebarOpen={isFileExplorerOpen}
+                onSidebarToggle={() => setIsFileExplorerOpen(!isFileExplorerOpen)}
+            />
+            
+            {/* Phase 2: AI Code Actions Menu */}
+            <CodeActionMenu
+                isOpen={isCodeActionMenuOpen}
+                position={codeActionMenuPosition}
+                onClose={() => setIsCodeActionMenuOpen(false)}
+                onActionSelect={handleCodeAction}
+            />
+            
+            {/* Phase 2: Diff Preview Modal */}
+            {diffPreview && (
+                <DiffPreviewModal
+                    isOpen={true}
+                    onClose={() => setDiffPreview(null)}
+                    onApprove={handleApplyDiff}
+                    onReject={() => setDiffPreview(null)}
+                    action={diffPreview.action}
+                    originalCode={diffPreview.originalCode}
+                    modifiedCode={diffPreview.modifiedCode}
+                    fileName={tabs.find(t => t.id === activeTabId) ? files[tabs.find(t => t.id === activeTabId)!.fileId]?.name || '' : ''}
                 />
             )}
-            isSidebarOpen={isFileExplorerOpen}
-            onSidebarToggle={() => setIsFileExplorerOpen(!isFileExplorerOpen)}
-        />
+            
+            {/* Phase 2: Code Explanation Panel */}
+            {explanationData && (
+                <CodeExplanationPanel
+                    isOpen={true}
+                    onClose={() => setExplanationData(null)}
+                    explanation={explanationData.explanation}
+                    code={explanationData.code}
+                    fileName={explanationData.fileName}
+                    scope={explanationData.scope}
+                />
+            )}
+            
+            {/* Phase 2: Prompt History Panel */}
+            <PromptHistory
+                isOpen={isPromptHistoryOpen}
+                onClose={() => setIsPromptHistoryOpen(false)}
+            />
+        </>
     );
 }

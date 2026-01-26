@@ -7,6 +7,11 @@ const envSchema = z.object({
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1, 'Clerk publishable key is required for authentication'),
     CLERK_SECRET_KEY: z.string().min(1, 'Clerk secret key is required for authentication').optional(),
     
+    // GitHub OAuth (Phase 2)
+    GITHUB_CLIENT_ID: z.string().optional(),
+    GITHUB_CLIENT_SECRET: z.string().optional(),
+    NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
+    
     // AI Token Limits (with defaults)
     // These limits prevent runaway costs and abuse
     AI_MAX_TOKENS_PER_REQUEST: z.coerce.number().positive().default(10000),
@@ -25,6 +30,11 @@ const processEnv = {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
     CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
+    
+    // GitHub OAuth
+    GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID,
+    GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET,
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
 
     // keys with default fallback values
     AI_MAX_TOKENS_PER_REQUEST: process.env.AI_MAX_TOKENS_PER_REQUEST,

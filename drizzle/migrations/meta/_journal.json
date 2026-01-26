@@ -15,6 +15,13 @@
       "when": 1769379063045,
       "tag": "0001_vengeful_korvac",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1769418433697,
+      "tag": "0002_spicy_havok",
+      "breakpoints": true
     }
   ]
 }

@@ -14,7 +14,9 @@ import { neon } from '@neondatabase/serverless';
 import { env } from '@/lib/config/env';
 import * as schema from './schema';
 
-let db: ReturnType<typeof drizzle> | null = null;
+type DbClient = ReturnType<typeof drizzle<typeof schema>>;
+
+let db: DbClient | null = null;
 
 /**
  * Get database client instance
@@ -22,7 +24,7 @@ let db: ReturnType<typeof drizzle> | null = null;
  * Lazy initialization to avoid connection issues during build time.
  * Returns null if DATABASE_URL is not configured.
  */
-export function getDb() {
+export function getDb(): DbClient | null {
   if (!env.DATABASE_URL) {
     console.warn('DATABASE_URL not configured. Workspace persistence is disabled.');
     return null;

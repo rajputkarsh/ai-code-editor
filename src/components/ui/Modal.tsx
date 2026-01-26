@@ -7,12 +7,13 @@ import { createPortal } from 'react-dom';
 interface ModalProps {
     isOpen: boolean;
     onClose: () => void;
-    title: string;
+    title?: string;
     children: React.ReactNode;
     footer?: React.ReactNode;
+    size?: 'small' | 'medium' | 'large' | 'xlarge';
 }
 
-export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, footer, size = 'medium' }: ModalProps) {
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
@@ -31,23 +32,32 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
     }, [isOpen]);
 
     if (!mounted || !isOpen) return null;
+    
+    const sizeClasses = {
+        small: 'max-w-sm',
+        medium: 'max-w-md',
+        large: 'max-w-4xl',
+        xlarge: 'max-w-7xl',
+    };
 
     return createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div
-                className="bg-[#1e1e1e] border border-neutral-700 rounded-lg shadow-xl w-full max-w-md flex flex-col max-h-[90vh]"
+                className={`bg-[#1e1e1e] border border-neutral-700 rounded-lg shadow-xl w-full ${sizeClasses[size]} flex flex-col max-h-[90vh]`}
                 role="dialog"
                 aria-modal="true"
             >
-                <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
-                    <h2 className="text-sm font-semibold text-neutral-200">{title}</h2>
-                    <button
-                        onClick={onClose}
-                        className="text-neutral-400 hover:text-white transition-colors"
-                    >
-                        <X size={16} />
-                    </button>
-                </div>
+                {title && (
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
+                        <h2 className="text-sm font-semibold text-neutral-200">{title}</h2>
+                        <button
+                            onClick={onClose}
+                            className="text-neutral-400 hover:text-white transition-colors"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
+                )}
 
                 <div className="p-4 overflow-y-auto">
                     {children}

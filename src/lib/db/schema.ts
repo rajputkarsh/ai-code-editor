@@ -55,3 +55,30 @@ export const workspaces = pgTable('workspaces', {
 export type Workspace = typeof workspaces.$inferSelect;
 export type NewWorkspace = typeof workspaces.$inferInsert;
 
+/**
+ * GitHub Authentication Table (Phase 2)
+ * 
+ * Stores GitHub OAuth tokens for users who have connected their GitHub account.
+ * 
+ * Security:
+ * - Access tokens are encrypted
+ * - Server-side only access
+ * - User-scoped permissions
+ */
+export const githubAuth = pgTable('github_auth', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull().unique(), // Clerk user ID (one GitHub connection per user)
+  githubUserId: text('github_user_id').notNull(), // GitHub user ID
+  githubUsername: text('github_username').notNull(),
+  accessToken: text('access_token').notNull(), // Encrypted OAuth access token
+  scope: text('scope').notNull(), // OAuth scopes granted (e.g., 'repo, read:user')
+  tokenType: text('token_type').notNull().default('bearer'),
+  
+  // Timestamps
+  connectedAt: timestamp('connected_at').notNull().defaultNow(),
+  lastUsedAt: timestamp('last_used_at').notNull().defaultNow(),
+});
+
+export type GitHubAuth = typeof githubAuth.$inferSelect;
+export type NewGitHubAuth = typeof githubAuth.$inferInsert;
+
