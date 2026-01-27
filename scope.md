@@ -423,6 +423,141 @@ Introduce **inline AI coding** and **GitHub repository connectivity**.
 
 ---
 
+# PHASE 2.5: Multi-Workspace Management
+
+### Goal
+Enable users to **create, switch, organize, and manage multiple workspaces** in a predictable and scalable way, without impacting editor performance or AI workflows.
+
+This phase formalizes the concept of **workspaces as first-class entities** and prepares the product for:
+- Power users
+- GitHub + non-GitHub projects
+- Teams (future)
+- Billing limits (future)
+
+---
+
+## 2.5.1 Workspace Lifecycle Management
+
+### Scope
+Allow authenticated users to:
+- Create a new workspace
+- Rename an existing workspace
+- Delete a workspace
+- Switch between workspaces
+
+### Rules
+- Each workspace has:
+  - Unique workspace ID
+  - Human-readable name
+  - Creation timestamp
+  - Last opened timestamp
+- Deleting a workspace is permanent (no recovery UI)
+
+---
+
+## 2.5.2 Workspace Types
+
+### Supported Types
+- **Cloud Workspace**
+  - Source of truth: application backend
+- **GitHub-Linked Workspace**
+  - Source of truth: GitHub repository
+  - Local changes tracked separately
+
+Workspace type must be:
+- Explicit
+- Immutable after creation
+
+---
+
+## 2.5.3 Workspace Selector UI
+
+### Scope
+- Workspace selector accessible from editor shell
+- Displays:
+  - Workspace name
+  - Workspace type (Cloud / GitHub)
+  - Last opened time
+
+### Behavior
+- Switching workspace:
+  - Persists current workspace state
+  - Loads selected workspace state
+- No page reload required
+
+### Constraints
+- Minimal UI
+- No drag-and-drop ordering
+- No search (yet)
+
+---
+
+## 2.5.4 Active Workspace Semantics
+
+### Rules
+- Only **one workspace is active** at a time
+- All editor, AI, and Git operations are scoped to:
+  - Active workspace
+- Active workspace ID must be:
+  - Available server-side
+  - Explicitly passed to APIs
+
+---
+
+## 2.5.5 Backend & Data Model
+
+### Scope
+- Workspace metadata stored per user
+- APIs to:
+  - List user workspaces
+  - Create workspace
+  - Update workspace metadata
+  - Delete workspace
+  - Set active workspace
+
+### Constraints
+- Implemented via Hono
+- Authenticated access only
+- Strict ownership checks
+
+---
+
+## 2.5.6 Limits & Future Billing Hooks
+
+### Initial Limits (Infrastructure Only)
+- Maximum number of workspaces per user
+- Limits enforced server-side
+
+### Notes
+- No billing UI
+- No plan enforcement UI
+- Limit logic must be easy to connect to billing later
+
+---
+
+## 2.5.7 Non-Goals
+
+This phase explicitly does **not** include:
+- Workspace sharing
+- Team workspaces
+- Workspace templates
+- Archiving or soft delete
+- Workspace cloning
+- Billing UI or upgrades
+
+---
+
+## Phase Exit Criteria
+
+This phase is considered complete when:
+1. Users can create and delete multiple workspaces
+2. Users can switch workspaces without losing state
+3. Each workspace is isolated and correctly scoped
+4. GitHub and Cloud workspaces behave predictably
+5. Workspace limits are enforceable server-side
+
+---
+
 # PHASE 3: Agent Mode + GitHub Operations
 
 ### Goal
