@@ -6,7 +6,11 @@
 export * from './types';
 export * from './vfs';
 export * from './zip-importer';
-export * from './workspace-factory';
+export {
+  createEmptyWorkspace,
+  updateLastOpened,
+  renameWorkspace as renameWorkspaceLocal,
+} from './workspace-factory';
 export * from './sample-project';
 export * from './persistence';
 export * from './api-client';
