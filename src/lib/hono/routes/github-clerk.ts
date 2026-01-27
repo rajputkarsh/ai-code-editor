@@ -6,6 +6,8 @@
  */
 
 import { Hono } from 'hono';
+import { zValidator } from '@hono/zod-validator';
+import { z } from 'zod';
 import type { AppVariables } from '../middleware';
 import {
   getGitHubTokenFromClerk,
@@ -13,6 +15,7 @@ import {
   hasGitHubConnected,
   githubApiRequest,
 } from '@/lib/github/clerk-auth';
+import { computeAgentBranchName, publishAgentChanges, type AgentGitHubChange } from '@/lib/github/agent-operations';
 
 const app = new Hono<{ Variables: AppVariables }>();
 
@@ -283,6 +286,81 @@ app.get('/user', async (c) => {
     return c.json({ error: error.message || 'Failed to fetch user' }, 500);
   }
 });
+
+const agentPublishSchema = z.object({
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  baseBranch: z.string().min(1),
+  task: z.string().min(1),
+  branchName: z.string().min(1),
+  commitMessage: z.string().min(1),
+  prTitle: z.string().min(1),
+  prBody: z.string().min(1),
+  changes: z.array(
+    z.object({
+      filePath: z.string().min(1),
+      changeType: z.enum(['modify', 'create', 'delete']),
+      updatedContent: z.string().optional(),
+    })
+  ),
+});
+
+/**
+ * POST /api/github/agent/publish
+ *
+ * Executes approved agent GitHub operations:
+ * - Create branch (if needed)
+ * - Commit changes
+ * - Push to remote
+ * - Open Pull Request
+ *
+ * Permission boundary: caller must only invoke after explicit user approval.
+ */
+app.post(
+  '/agent/publish',
+  zValidator('json', agentPublishSchema),
+  async (c) => {
+    const payload = c.req.valid('json');
+
+    const expectedBranchName = computeAgentBranchName(payload.task, payload.baseBranch);
+    if (payload.branchName !== expectedBranchName) {
+      return c.json({ error: 'Branch name mismatch for this task.' }, 400);
+    }
+
+    const changes: AgentGitHubChange[] = payload.changes.map((change) => ({
+      filePath: change.filePath,
+      changeType: change.changeType,
+      updatedContent: change.updatedContent,
+    }));
+
+    for (const change of changes) {
+      if (change.changeType !== 'delete' && change.updatedContent === undefined) {
+        return c.json(
+          { error: `Missing updatedContent for ${change.changeType}: ${change.filePath}` },
+          400
+        );
+      }
+    }
+
+    try {
+      const result = await publishAgentChanges({
+        owner: payload.owner,
+        repo: payload.repo,
+        baseBranch: payload.baseBranch,
+        branchName: payload.branchName,
+        commitMessage: payload.commitMessage,
+        prTitle: payload.prTitle,
+        prBody: payload.prBody,
+        changes,
+      });
+
+      return c.json(result);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to publish GitHub changes';
+      return c.json({ error: message }, 500);
+    }
+  }
+);
 
 export default app;
 

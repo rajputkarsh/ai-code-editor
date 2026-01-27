@@ -20,8 +20,11 @@ import { generateAgentPlan } from '@/lib/ai/agent/planner';
 import { executeAgentStep } from '@/lib/ai/agent/executor';
 import { buildWorkspaceIndex, buildWorkspaceSnapshot, getFileContentsByPath } from '@/lib/ai/agent/workspace';
 import { AgentDiffViewer } from './AgentDiffViewer';
-import type { AgentMode, AgentStepChange } from '@/lib/ai/agent/types';
+import type { AgentMode, AgentStepChange, AgentAppliedChange, AgentPermissionState } from '@/lib/ai/agent/types';
 import { Modal } from '@/components/ui/Modal';
+import { generateGitHubDraft, type AgentGitHubDraft } from '@/lib/ai/agent/github-draft';
+import { parseGitHubUrl } from '@/lib/github/repository';
+import { buildDeterministicBranchName } from '@/lib/github/branch-naming';
 
 interface AIChatPanelProps {
     onTemplateSelect?: (template: PromptTemplate) => void;
@@ -51,6 +54,8 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
         setAgentStepResult,
         agentCurrentStepIndex,
         setAgentCurrentStepIndex,
+        agentAppliedChanges,
+        setAgentAppliedChanges,
         agentPermissions,
         setAgentPermissions,
         permissionsApproved,
@@ -60,9 +65,20 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
         resetAgentState,
     } = useAIChatState();
 
-    const { vfs } = useWorkspace();
+    const { workspace, vfs } = useWorkspace();
     const { files, createFile, createFolder, updateFileContent, deleteNode, rootId } = useFileSystem();
     const [isClearChatOpen, setIsClearChatOpen] = useState(false);
+    const [gitHubStage, setGitHubStage] = useState<'idle' | 'drafting' | 'awaiting_review' | 'publishing' | 'published' | 'error'>('idle');
+    const [gitHubDraft, setGitHubDraft] = useState<AgentGitHubDraft | null>(null);
+    const [gitHubError, setGitHubError] = useState<string | null>(null);
+    const [gitHubBranches, setGitHubBranches] = useState<string[]>([]);
+    const [selectedBaseBranch, setSelectedBaseBranch] = useState<string | null>(null);
+    const [isFetchingBranches, setIsFetchingBranches] = useState(false);
+    const [gitHubPublishResult, setGitHubPublishResult] = useState<{
+        prUrl: string;
+        prNumber: number;
+        branchName: string;
+    } | null>(null);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const workspaceIndex = useMemo(() => {
@@ -80,12 +96,84 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
         const paths = agentStepResult.changes.map((change) => change.filePath);
         return getFileContentsByPath(vfs, paths);
     }, [vfs, agentStepResult, files]);
+    const appliedOriginalContentByPath = useMemo(() => {
+        if (agentAppliedChanges.length === 0) return {};
+        return agentAppliedChanges.reduce<Record<string, string>>((acc, change) => {
+            if (change.originalContent !== undefined) {
+                acc[change.filePath] = change.originalContent;
+            }
+            return acc;
+        }, {});
+    }, [agentAppliedChanges]);
+    const githubRepo = useMemo(() => {
+        const repoUrl = workspace?.metadata.githubMetadata?.repositoryUrl;
+        if (!repoUrl) return null;
+        return parseGitHubUrl(repoUrl);
+    }, [workspace]);
 
     // Auto-scroll to bottom when new messages arrive
     // Auto-scroll to bottom when messages change
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, streamingMessage]);
+
+    useEffect(() => {
+        const defaultBranch = workspace?.metadata.githubMetadata?.branch || null;
+        if (defaultBranch && !selectedBaseBranch) {
+            setSelectedBaseBranch(defaultBranch);
+        }
+    }, [selectedBaseBranch, workspace]);
+
+    useEffect(() => {
+        if (agentStage === 'idle') {
+            setGitHubStage('idle');
+            setGitHubDraft(null);
+            setGitHubError(null);
+            setGitHubPublishResult(null);
+        }
+    }, [agentStage]);
+
+    useEffect(() => {
+        if (!githubRepo || gitHubBranches.length > 0 || isFetchingBranches) {
+            return;
+        }
+        if (agentMode !== 'agent' || agentStage !== 'completed') {
+            return;
+        }
+
+        const fetchBranches = async () => {
+            setIsFetchingBranches(true);
+            try {
+                const response = await fetch(
+                    `/api/github/repository/${githubRepo.owner}/${githubRepo.repo}/branches`
+                );
+                if (!response.ok) {
+                    throw new Error('Failed to fetch branches');
+                }
+                const data: { branches: Array<{ name: string }> } = await response.json();
+                const branchNames = data.branches.map((branch) => branch.name);
+                setGitHubBranches(branchNames);
+                if (!selectedBaseBranch && branchNames.length > 0) {
+                    setSelectedBaseBranch(branchNames[0]);
+                }
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Failed to load branches';
+                setGitHubError(message);
+                setGitHubStage('error');
+            } finally {
+                setIsFetchingBranches(false);
+            }
+        };
+
+        fetchBranches();
+    }, [
+        agentMode,
+        agentStage,
+        githubRepo,
+        gitHubBranches.length,
+        isFetchingBranches,
+        selectedBaseBranch,
+    ]);
 
     // Track if we're already processing to avoid duplicates
     const processingRef = useRef(false);
@@ -203,6 +291,24 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
             updateFileContent,
             workspaceIndex,
         ]
+    );
+
+    const mergeAppliedChanges = useCallback(
+        (existing: AgentAppliedChange[], incoming: AgentAppliedChange[]) => {
+            const merged = new Map<string, AgentAppliedChange>();
+            existing.forEach((change) => {
+                merged.set(change.filePath, change);
+            });
+            incoming.forEach((change) => {
+                const previous = merged.get(change.filePath);
+                merged.set(change.filePath, {
+                    ...change,
+                    originalContent: previous?.originalContent ?? change.originalContent,
+                });
+            });
+            return Array.from(merged.values());
+        },
+        []
     );
 
     // Handle sending a message
@@ -342,11 +448,21 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
             };
             addMessage(userMessage);
             resetAgentState();
+            setGitHubStage('idle');
+            setGitHubDraft(null);
+            setGitHubError(null);
+            setGitHubPublishResult(null);
             setAgentTask(content);
             setAgentStage('awaiting_permissions');
             setAgentError(null);
         },
-        [addMessage, resetAgentState, setAgentError, setAgentStage, setAgentTask]
+        [
+            addMessage,
+            resetAgentState,
+            setAgentError,
+            setAgentStage,
+            setAgentTask,
+        ]
     );
 
     const handleApprovePermissions = useCallback(async () => {
@@ -447,6 +563,11 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
         if (!agentPlan || !agentStepResult) return;
 
         try {
+            const appliedChanges = agentStepResult.changes.map((change) => ({
+                ...change,
+                originalContent: originalContentByPath[change.filePath],
+            }));
+            setAgentAppliedChanges(mergeAppliedChanges(agentAppliedChanges, appliedChanges));
             applyStepChanges(agentStepResult.changes);
             setAgentStepResult(null);
             const nextIndex = agentCurrentStepIndex + 1;
@@ -465,9 +586,13 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
         agentCurrentStepIndex,
         agentPlan,
         agentStepResult,
+        agentAppliedChanges,
         applyStepChanges,
+        mergeAppliedChanges,
+        originalContentByPath,
         runNextStep,
         setAgentError,
+        setAgentAppliedChanges,
         setAgentStage,
         setAgentStepResult,
     ]);
@@ -482,8 +607,113 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
         setAgentStage('completed');
     }, [setAgentStage, setAgentStepResult]);
 
+    const handlePrepareGitHubDraft = useCallback(async () => {
+        if (!agentTask || !githubRepo || !selectedBaseBranch) {
+            setGitHubError('Missing GitHub repository context.');
+            setGitHubStage('error');
+            return;
+        }
+        if (agentAppliedChanges.length === 0) {
+            setGitHubError('No agent changes available to publish.');
+            setGitHubStage('error');
+            return;
+        }
+
+        setGitHubStage('drafting');
+        setGitHubError(null);
+        setGitHubPublishResult(null);
+
+        try {
+            const draft = await generateGitHubDraft({
+                task: agentTask,
+                repoFullName: `${githubRepo.owner}/${githubRepo.repo}`,
+                baseBranch: selectedBaseBranch,
+                changes: agentAppliedChanges,
+            });
+            setGitHubDraft(draft);
+            setGitHubStage('awaiting_review');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to generate GitHub draft';
+            setGitHubError(message);
+            setGitHubStage('error');
+        }
+    }, [agentAppliedChanges, agentTask, githubRepo, selectedBaseBranch]);
+
+    const handlePublishGitHubChanges = useCallback(async () => {
+        if (!agentTask || !githubRepo || !selectedBaseBranch || !gitHubDraft) {
+            setGitHubError('Missing GitHub publish details.');
+            setGitHubStage('error');
+            return;
+        }
+        if (!vfs) {
+            setGitHubError('Workspace is still loading.');
+            setGitHubStage('error');
+            return;
+        }
+
+        setGitHubStage('publishing');
+        setGitHubError(null);
+
+        try {
+            const contentByPath = getFileContentsByPath(
+                vfs,
+                agentAppliedChanges.map((change) => change.filePath)
+            );
+            const changesPayload = agentAppliedChanges.map((change) => {
+                if (change.changeType === 'delete') {
+                    return { filePath: change.filePath, changeType: change.changeType };
+                }
+                const updatedContent = contentByPath[change.filePath];
+                if (updatedContent === undefined) {
+                    throw new Error(`Missing content for ${change.filePath}`);
+                }
+                return {
+                    filePath: change.filePath,
+                    changeType: change.changeType,
+                    updatedContent,
+                };
+            });
+
+            const response = await fetch('/api/github/agent/publish', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    owner: githubRepo.owner,
+                    repo: githubRepo.repo,
+                    baseBranch: selectedBaseBranch,
+                    task: agentTask,
+                    branchName: buildDeterministicBranchName(agentTask, selectedBaseBranch),
+                    commitMessage: gitHubDraft.commitMessage,
+                    prTitle: gitHubDraft.prTitle,
+                    prBody: gitHubDraft.prBody,
+                    changes: changesPayload,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => null);
+                throw new Error(errorData?.error || 'Failed to publish changes');
+            }
+
+            const data: { prUrl: string; prNumber: number; branchName: string } = await response.json();
+            setGitHubPublishResult(data);
+            setGitHubStage('published');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to publish changes';
+            setGitHubError(message);
+            setGitHubStage('error');
+        }
+    }, [
+        agentAppliedChanges,
+        agentTask,
+        gitHubDraft,
+        githubRepo,
+        selectedBaseBranch,
+        vfs,
+    ]);
+
     const handlePermissionToggle = useCallback(
-        (key: 'read' | 'modify' | 'create' | 'delete') => {
+        (key: keyof AgentPermissionState) => {
             setAgentPermissions({
                 ...agentPermissions,
                 [key]: !agentPermissions[key],
@@ -554,6 +784,32 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
         }
     };
 
+    const gitHubBranchName = useMemo(() => {
+        if (!agentTask || !selectedBaseBranch) return null;
+        return buildDeterministicBranchName(agentTask, selectedBaseBranch);
+    }, [agentTask, selectedBaseBranch]);
+    const hasGitHubPermissions =
+        permissionsApproved &&
+        agentPermissions.createBranch &&
+        agentPermissions.commit &&
+        agentPermissions.push &&
+        agentPermissions.openPullRequest;
+    const canShowGitHubOps =
+        agentMode === 'agent' &&
+        agentStage === 'completed' &&
+        workspace?.metadata.type === 'github';
+    const workspacePermissionOptions: Array<{ key: keyof AgentPermissionState; label: string }> = [
+        { key: 'read', label: 'Read files' },
+        { key: 'modify', label: 'Modify files' },
+        { key: 'create', label: 'Create files' },
+        { key: 'delete', label: 'Delete files' },
+    ];
+    const gitHubPermissionOptions: Array<{ key: keyof AgentPermissionState; label: string }> = [
+        { key: 'createBranch', label: 'Create branch' },
+        { key: 'commit', label: 'Commit changes' },
+        { key: 'push', label: 'Push to remote' },
+        { key: 'openPullRequest', label: 'Open pull request' },
+    ];
     const isAgentBusy = agentMode === 'agent' && !['idle', 'completed', 'error'].includes(agentStage);
     const handleInputSend = useCallback(
         (message: string) => {
@@ -674,18 +930,35 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
                             <div className="text-xs text-neutral-300">
                                 The agent requests task-scoped permissions.
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                {(['read', 'modify', 'create', 'delete'] as const).map((perm) => (
-                                    <label key={perm} className="flex items-center gap-2 text-xs">
-                                        <input
-                                            type="checkbox"
-                                            checked={agentPermissions[perm]}
-                                            onChange={() => handlePermissionToggle(perm)}
-                                            className="accent-orange-500"
-                                        />
-                                        <span className="capitalize">{perm}</span>
-                                    </label>
-                                ))}
+                            <div className="space-y-2">
+                                <div className="text-[11px] text-neutral-500">Workspace permissions</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {workspacePermissionOptions.map((perm) => (
+                                        <label key={perm.key} className="flex items-center gap-2 text-xs">
+                                            <input
+                                                type="checkbox"
+                                                checked={agentPermissions[perm.key]}
+                                                onChange={() => handlePermissionToggle(perm.key)}
+                                                className="accent-orange-500"
+                                            />
+                                            <span>{perm.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                                <div className="text-[11px] text-neutral-500">GitHub permissions</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {gitHubPermissionOptions.map((perm) => (
+                                        <label key={perm.key} className="flex items-center gap-2 text-xs">
+                                            <input
+                                                type="checkbox"
+                                                checked={agentPermissions[perm.key]}
+                                                onChange={() => handlePermissionToggle(perm.key)}
+                                                className="accent-orange-500"
+                                            />
+                                            <span>{perm.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
                             <button
                                 onClick={handleApprovePermissions}
@@ -785,14 +1058,167 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
                     )}
 
                     {agentStage === 'completed' && (
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs text-neutral-400">Agent task completed.</span>
-                            <button
-                                onClick={resetAgentState}
-                                className="text-xs text-neutral-300 hover:text-white"
-                            >
-                                New Task
-                            </button>
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs text-neutral-400">Agent task completed.</span>
+                                <button
+                                    onClick={resetAgentState}
+                                    className="text-xs text-neutral-300 hover:text-white"
+                                >
+                                    New Task
+                                </button>
+                            </div>
+                            {canShowGitHubOps ? (
+                                <div className="space-y-3 border border-neutral-800 rounded p-2">
+                                    <div className="text-xs text-orange-400 font-semibold tracking-wide">
+                                        GITHUB OPERATIONS
+                                    </div>
+                                    <div className="text-[11px] text-neutral-500">
+                                        Repository:{' '}
+                                        {githubRepo ? `${githubRepo.owner}/${githubRepo.repo}` : 'Not available'}
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[11px] text-neutral-400">
+                                        <span className="font-medium text-neutral-300">Base branch:</span>
+                                        <select
+                                            value={selectedBaseBranch ?? ''}
+                                            onChange={(event) => setSelectedBaseBranch(event.target.value)}
+                                            disabled={isFetchingBranches || gitHubStage === 'publishing'}
+                                            className="bg-neutral-850 border border-neutral-700 rounded px-2 py-1 text-neutral-200"
+                                        >
+                                            {selectedBaseBranch ? (
+                                                <option value={selectedBaseBranch}>{selectedBaseBranch}</option>
+                                            ) : (
+                                                <option value="">Select branch</option>
+                                            )}
+                                            {gitHubBranches
+                                                .filter((branch) => branch !== selectedBaseBranch)
+                                                .map((branch) => (
+                                                    <option key={branch} value={branch}>
+                                                        {branch}
+                                                    </option>
+                                                ))}
+                                        </select>
+                                    </div>
+                                    {isFetchingBranches && (
+                                        <div className="text-[11px] text-neutral-500">
+                                            Loading branches...
+                                        </div>
+                                    )}
+                                    {!hasGitHubPermissions && (
+                                        <div className="text-[11px] text-neutral-500">
+                                            Approve GitHub permissions to publish changes.
+                                        </div>
+                                    )}
+                                    {agentAppliedChanges.length === 0 && (
+                                        <div className="text-[11px] text-neutral-500">
+                                            No agent changes available to publish.
+                                        </div>
+                                    )}
+                                    {gitHubStage === 'idle' && (
+                                        <button
+                                            onClick={handlePrepareGitHubDraft}
+                                            disabled={
+                                                !hasGitHubPermissions ||
+                                                agentAppliedChanges.length === 0 ||
+                                                !selectedBaseBranch ||
+                                                !githubRepo
+                                            }
+                                            className="px-3 py-1.5 text-xs rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Prepare GitHub Review
+                                        </button>
+                                    )}
+                                    {gitHubStage === 'drafting' && (
+                                        <div className="text-xs text-neutral-400">
+                                            Generating commit + PR draft...
+                                        </div>
+                                    )}
+                                    {gitHubStage === 'awaiting_review' && gitHubDraft && (
+                                        <div className="space-y-3">
+                                            <div className="text-xs text-neutral-300">
+                                                <span className="font-medium">Branch:</span>{' '}
+                                                {gitHubBranchName || 'pending'}
+                                            </div>
+                                            <div className="text-xs text-neutral-300">
+                                                <span className="font-medium">Commit message:</span>
+                                            </div>
+                                            <div className="text-[11px] text-neutral-200 bg-neutral-900 border border-neutral-800 rounded px-2 py-1">
+                                                {gitHubDraft.commitMessage}
+                                            </div>
+                                            <div className="text-xs text-neutral-300">
+                                                <span className="font-medium">PR title:</span> {gitHubDraft.prTitle}
+                                            </div>
+                                            <div className="text-xs text-neutral-300">
+                                                <span className="font-medium">PR description:</span>
+                                            </div>
+                                            <pre className="p-2 text-[11px] text-neutral-200 bg-neutral-950 border border-neutral-800 rounded whitespace-pre-wrap">
+                                                {gitHubDraft.prBody}
+                                            </pre>
+                                            <AgentDiffViewer
+                                                changes={agentAppliedChanges}
+                                                originalContentByPath={appliedOriginalContentByPath}
+                                            />
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={handlePublishGitHubChanges}
+                                                    disabled={!hasGitHubPermissions}
+                                                    className="px-3 py-1.5 text-xs rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    Publish to GitHub
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setGitHubDraft(null);
+                                                        setGitHubStage('idle');
+                                                    }}
+                                                    className="px-3 py-1.5 text-xs rounded bg-neutral-700 text-neutral-200 hover:bg-neutral-600"
+                                                >
+                                                    Edit Draft
+                                                </button>
+                                            </div>
+                                            <div className="text-[11px] text-neutral-500">
+                                                Approval gate: PR creation requires explicit publish.
+                                            </div>
+                                        </div>
+                                    )}
+                                    {gitHubStage === 'publishing' && (
+                                        <div className="text-xs text-neutral-400">
+                                            Publishing to GitHub...
+                                        </div>
+                                    )}
+                                    {gitHubStage === 'published' && gitHubPublishResult && (
+                                        <div className="text-xs text-green-400">
+                                            PR #{gitHubPublishResult.prNumber} created.{' '}
+                                            <a
+                                                href={gitHubPublishResult.prUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="underline text-green-300"
+                                            >
+                                                Open PR
+                                            </a>
+                                        </div>
+                                    )}
+                                    {gitHubStage === 'error' && gitHubError && (
+                                        <div className="space-y-2">
+                                            <div className="text-xs text-red-400">{gitHubError}</div>
+                                            <button
+                                                onClick={() => {
+                                                    setGitHubStage('idle');
+                                                    setGitHubError(null);
+                                                }}
+                                                className="text-xs text-neutral-300 hover:text-white"
+                                            >
+                                                Back
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="text-[11px] text-neutral-500">
+                                    GitHub operations are available only for GitHub-linked workspaces.
+                                </div>
+                            )}
                         </div>
                     )}
 

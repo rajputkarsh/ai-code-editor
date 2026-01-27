@@ -42,7 +42,8 @@ export async function generateAgentPlan({
 
     const permissionLine = [
         `Permissions for this task:`,
-        `read=${permissions.read}, modify=${permissions.modify}, create=${permissions.create}, delete=${permissions.delete}`,
+        `read=${permissions.read}, modify=${permissions.modify}, create=${permissions.create}, delete=${permissions.delete},`,
+        `createBranch=${permissions.createBranch}, commit=${permissions.commit}, push=${permissions.push}, openPullRequest=${permissions.openPullRequest}`,
         'Plan must respect permissions (no modify/create/delete if not allowed).',
     ].join(' ');
 

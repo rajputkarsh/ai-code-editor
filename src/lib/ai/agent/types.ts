@@ -15,6 +15,10 @@ export interface AgentPermissionState {
     modify: boolean;
     create: boolean;
     delete: boolean;
+    createBranch: boolean;
+    commit: boolean;
+    push: boolean;
+    openPullRequest: boolean;
 }
 
 export interface AgentPlanStep {
@@ -37,6 +41,10 @@ export interface AgentStepChange {
     filePath: string;
     changeType: AgentChangeType;
     updatedContent?: string;
+}
+
+export interface AgentAppliedChange extends AgentStepChange {
+    originalContent?: string;
 }
 
 export interface AgentStepResult {

@@ -14,6 +14,7 @@ import type {
     AgentPlan,
     AgentStepResult,
     AgentPermissionState,
+    AgentAppliedChange,
 } from '@/lib/ai/agent/types';
 
 interface AIChatStateContextType {
@@ -52,6 +53,8 @@ interface AIChatStateContextType {
     setAgentStepResult: (result: AgentStepResult | null) => void;
     agentCurrentStepIndex: number;
     setAgentCurrentStepIndex: (index: number) => void;
+    agentAppliedChanges: AgentAppliedChange[];
+    setAgentAppliedChanges: (changes: AgentAppliedChange[]) => void;
     agentPermissions: AgentPermissionState;
     setAgentPermissions: (next: AgentPermissionState) => void;
     permissionsApproved: boolean;
@@ -87,11 +90,16 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
     const [agentPlan, setAgentPlan] = useState<AgentPlan | null>(null);
     const [agentStepResult, setAgentStepResult] = useState<AgentStepResult | null>(null);
     const [agentCurrentStepIndex, setAgentCurrentStepIndex] = useState(-1);
+    const [agentAppliedChanges, setAgentAppliedChanges] = useState<AgentAppliedChange[]>([]);
     const [agentPermissions, setAgentPermissions] = useState<AgentPermissionState>({
         read: true,
         modify: true,
         create: true,
         delete: false,
+        createBranch: false,
+        commit: false,
+        push: false,
+        openPullRequest: false,
     });
     const [permissionsApproved, setPermissionsApproved] = useState(false);
     const [agentError, setAgentError] = useState<string | null>(null);
@@ -168,11 +176,16 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
         setAgentPlan(null);
         setAgentStepResult(null);
         setAgentCurrentStepIndex(-1);
+        setAgentAppliedChanges([]);
         setAgentPermissions({
             read: true,
             modify: true,
             create: true,
             delete: false,
+            createBranch: false,
+            commit: false,
+            push: false,
+            openPullRequest: false,
         });
         setPermissionsApproved(false);
         setAgentError(null);
@@ -206,6 +219,8 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
             setAgentStepResult,
             agentCurrentStepIndex,
             setAgentCurrentStepIndex,
+            agentAppliedChanges,
+            setAgentAppliedChanges,
             agentPermissions,
             setAgentPermissions,
             permissionsApproved,
@@ -234,6 +249,7 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
             agentPlan,
             agentStepResult,
             agentCurrentStepIndex,
+            agentAppliedChanges,
             agentPermissions,
             permissionsApproved,
             agentError,

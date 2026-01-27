@@ -1,31 +1,21 @@
-# PHASE 3A – Agent Mode Execution Prompt (Core Intelligence)
+# PHASE 3B – Agent GitHub Operations Execution Prompt
 
-You are a **senior AI + platform engineer** implementing **Agent Mode** for a **Next.js (App Router) web-based code editor**.
+You are a **senior backend + DevOps engineer** extending **Agent Mode** to safely perform **GitHub operations**.
 
-Previous phases completed:
-- Inline AI (Gemini)
-- GitHub foundations
-- Workspace management
-- Persistence & sync
+Agent Mode core logic already exists.
 
-This phase introduces **Agent Mode as a controlled, transparent system**.
+This phase allows agents to:
+- Commit changes
+- Create branches
+- Open Pull Requests
 
-You must prioritize:
-- Safety
-- Explainability
-- Human control
+All GitHub actions must remain **fully auditable and reversible**.
 
 ---
 
 ## 🎯 PHASE GOAL
 
-Enable users to switch from **Chat Mode** to **Agent Mode**, where an AI agent can:
-- Analyze the entire workspace or repository
-- Propose a step-by-step execution plan
-- Perform multi-file changes incrementally
-- Pause for human approval at key checkpoints
-
-This phase must **not perform GitHub operations yet**.
+Enable AI agents to perform **GitHub operations** in a controlled, permission-based manner while keeping humans in control.
 
 ---
 
@@ -33,109 +23,97 @@ This phase must **not perform GitHub operations yet**.
 
 ---
 
-## 1️⃣ Agent Mode UX
-
-### Requirements
-- Toggle between:
-  - Chat Mode
-  - Agent Mode
-- Agent Mode must:
-  - Clearly indicate “AUTONOMOUS MODE”
-  - Display agent reasoning & plan
-
-### UI Rules
-- Agent actions are verbose
-- No hidden steps
-- User always sees:
-  - What the agent plans to do
-  - Which files are affected
-
----
-
-## 2️⃣ Agent Planning Phase (CRITICAL)
-
-### Behavior
-Before making any changes, the agent must:
-1. Analyze the workspace
-2. Generate a **step-by-step execution plan**
-3. List:
-   - Files to read
-   - Files to modify
-   - New files to create (if any)
-
-### Rules
-- Plan must be shown to user
-- User must explicitly approve the plan
-- No execution before approval
-
----
-
-## 3️⃣ Agent Permissions Model
+## 1️⃣ Agent GitHub Permissions
 
 ### Permission Levels
-Agent must request permissions **per task**:
-- Read files
-- Modify working tree
-- Create new files
-- Delete files
+Agents must request explicit permissions for:
+- Create branch
+- Commit changes
+- Push to remote
+- Open Pull Request
 
 ### Rules
 - Permissions are:
   - Task-scoped
-  - Explicit
-  - Revocable
-- No global agent permissions
+  - Repo-scoped
+  - Explicitly approved
+- No stored long-term permissions
 
 ---
 
-## 4️⃣ Multi-file Execution Engine
+## 2️⃣ Branch Management
 
 ### Behavior
-Once approved:
-- Agent executes changes **incrementally**
-- After each step:
-  - Show diff
-  - Allow user to approve or stop
-
-### Rules
-- No silent changes
-- No batch auto-apply without review
-- All changes are reversible
+- Agent must:
+  - Create a new feature branch
+  - Never push to default branch
+- Branch naming:
+  - Deterministic
+  - Human-readable
 
 ---
 
-## 5️⃣ Diff & Review System
+## 3️⃣ Commit Generation
 
 ### Requirements
-- Full diff view per step
-- File-by-file breakdown
-- Clear before/after comparison
+- AI-generated commit messages must:
+  - Follow conventional commit style
+  - Explain *why*, not just *what*
 
-### Constraints
-- No auto-save during agent execution
-- Changes are staged in-memory until approved
+### Rules
+- One logical change per commit
+- No squashing automatically
 
 ---
 
-## 6️⃣ Execution Model
+## 4️⃣ Pull Request Creation
 
-### Technical Notes
-- Agent reasoning uses **Gemini**
-- Execution is:
-  - Synchronous
-  - User-driven
-- No background jobs yet (Inngest later)
+### Behavior
+- Agent opens a Pull Request after commits
+- PR description must include:
+  - Summary of changes
+  - Files modified
+  - Risks & assumptions
+
+### Constraints
+- PR must target user-selected base branch
+- No auto-merge
+
+---
+
+## 5️⃣ Human Review Checkpoint (MANDATORY)
+
+Before PR creation:
+- Show:
+  - Commit list
+  - Diffs
+  - PR description draft
+- Require explicit approval
+
+---
+
+## 6️⃣ Security & Safety
+
+### Rules
+- GitHub tokens:
+  - Never exposed client-side
+  - Never logged
+- Repo access:
+  - Validated per operation
+- Agent cannot:
+  - Delete repositories
+  - Modify repo settings
+  - Force-push
 
 ---
 
 ## 🚫 OUT OF SCOPE (DO NOT IMPLEMENT)
 
-- GitHub commits
-- Branch creation
-- Pull requests
-- Background execution
-- Retry logic
-- Autonomous loops
+- GitHub webhooks
+- PR auto-merge
+- CI/CD triggers
+- Repo admin actions
+- Organization-wide access
 
 ---
 
@@ -143,29 +121,27 @@ Once approved:
 
 - TypeScript strict
 - No `any`
-- Clear separation:
-  - Agent planner
-  - Agent executor
-  - Diff renderer
-- Comments explaining:
-  - Why each approval step exists
+- Clear GitHub abstraction layer
+- Extensive comments explaining:
+  - Permission boundaries
+  - Failure modes
 
 ---
 
 ## ✅ EXPECTED OUTPUT
 
 At the end of this phase:
-1. Users can toggle Agent Mode
-2. Agent produces transparent execution plans
-3. Multi-file changes are previewed safely
-4. Users approve every step
-5. No GitHub operations occur
+1. Agent can create feature branches
+2. Agent can commit reviewed changes
+3. Agent can open Pull Requests
+4. All actions are transparent & auditable
+5. Users retain full control
 
 ---
 
 ## 🧠 FINAL INSTRUCTION
 
-Agent Mode must feel like:
-> “A junior engineer explaining every move before touching code.”
+This phase should feel like:
+> “The agent prepared everything, but *you* pressed publish.”
 
-Do not optimize for speed. Optimize for trust.
+No surprises. No automation without consent.
