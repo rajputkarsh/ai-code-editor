@@ -5,7 +5,7 @@
  * Main AI chat panel with collapsible sidebar
  */
 
-import React, { useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { useAIChatState } from '../../stores/ai-chat-state';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -21,6 +21,7 @@ import { executeAgentStep } from '@/lib/ai/agent/executor';
 import { buildWorkspaceIndex, buildWorkspaceSnapshot, getFileContentsByPath } from '@/lib/ai/agent/workspace';
 import { AgentDiffViewer } from './AgentDiffViewer';
 import type { AgentMode, AgentStepChange } from '@/lib/ai/agent/types';
+import { Modal } from '@/components/ui/Modal';
 
 interface AIChatPanelProps {
     onTemplateSelect?: (template: PromptTemplate) => void;
@@ -61,6 +62,7 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
 
     const { vfs } = useWorkspace();
     const { files, createFile, createFolder, updateFileContent, deleteNode, rootId } = useFileSystem();
+    const [isClearChatOpen, setIsClearChatOpen] = useState(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const workspaceIndex = useMemo(() => {
@@ -543,9 +545,7 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
     };
 
     const handleClearChat = () => {
-        if (confirm('Clear all chat messages?')) {
-            clearMessages();
-        }
+        setIsClearChatOpen(true);
     };
 
     const handleClose = () => {
@@ -573,6 +573,7 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
             : 'Ask about your code...';
 
     return (
+        <>
         <div className="
             flex flex-col h-full bg-neutral-900 border-l border-neutral-800 
             w-full md:w-96 
@@ -641,7 +642,7 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
             )}
 
             {agentMode === 'agent' && (
-                <div className="px-3 py-3 text-xs text-neutral-300 bg-neutral-900 border-b border-neutral-800 space-y-3">
+                <div className="overflow-y-auto px-3 py-3 text-xs text-neutral-300 bg-neutral-900 border-b border-neutral-800 space-y-3">
                     <div className="flex items-center justify-between">
                         <div className="text-orange-400 font-semibold tracking-wide">
                             AUTONOMOUS MODE
@@ -863,6 +864,35 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
                 placeholder={inputPlaceholder}
             />
         </div>
+        <Modal
+            isOpen={isClearChatOpen}
+            onClose={() => setIsClearChatOpen(false)}
+            title="Clear chat"
+            footer={
+                <>
+                    <button
+                        onClick={() => setIsClearChatOpen(false)}
+                        className="px-3 py-1.5 text-xs rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={() => {
+                            clearMessages();
+                            setIsClearChatOpen(false);
+                        }}
+                        className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-500"
+                    >
+                        Clear chat
+                    </button>
+                </>
+            }
+        >
+            <p className="text-sm text-neutral-300">
+                Clear all chat messages? This cannot be undone.
+            </p>
+        </Modal>
+        </>
     );
 }
 
