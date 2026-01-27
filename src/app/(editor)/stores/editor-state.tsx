@@ -18,6 +18,7 @@ interface EditorStateContextType {
     setActiveTab: (tabId: string, pane?: 'primary' | 'secondary') => void;
     setActivePaneForFileOpen: (pane: 'primary' | 'secondary') => void;
     toggleSplit: () => void;
+    resetState: () => void;
 }
 
 const EditorStateContext = createContext<EditorStateContextType | undefined>(undefined);
@@ -131,6 +132,14 @@ export function EditorStateProvider({ children }: { children: React.ReactNode })
         });
     }, [activeTabId, activeSecondaryTabId, tabs]);
 
+    const resetState = useCallback(() => {
+        setTabs([]);
+        setActiveTabId(null);
+        setActiveSecondaryTabId(null);
+        setIsSplit(false);
+        setActivePaneForFileOpen('primary');
+    }, []);
+
     const value = useMemo(
         () => ({
             activeTabId,
@@ -142,9 +151,10 @@ export function EditorStateProvider({ children }: { children: React.ReactNode })
             closeTab,
             setActiveTab,
             setActivePaneForFileOpen,
-            toggleSplit
+            toggleSplit,
+            resetState,
         }),
-        [activeTabId, activeSecondaryTabId, isSplit, tabs, activePaneForFileOpen, openFile, closeTab, setActiveTab, toggleSplit]
+        [activeTabId, activeSecondaryTabId, isSplit, tabs, activePaneForFileOpen, openFile, closeTab, setActiveTab, toggleSplit, resetState]
     );
 
     return <EditorStateContext.Provider value={value}>{children}</EditorStateContext.Provider>;

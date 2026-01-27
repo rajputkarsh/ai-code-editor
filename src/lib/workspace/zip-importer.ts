@@ -87,6 +87,7 @@ export async function importZipFile(
       id: crypto.randomUUID(),
       name: projectName,
       source: 'zip',
+      type: 'cloud',
       createdAt: new Date(),
       lastOpenedAt: new Date(),
     };

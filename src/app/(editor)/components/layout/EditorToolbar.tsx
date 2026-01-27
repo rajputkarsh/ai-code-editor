@@ -12,6 +12,7 @@
 
 import React from 'react';
 import { PanelLeft, MessageSquare, Wand2, Clock, FileText, Github } from 'lucide-react';
+import { WorkspaceSelector } from './WorkspaceSelector';
 
 interface EditorToolbarProps {
     isFileExplorerOpen: boolean;
@@ -37,7 +38,8 @@ export function EditorToolbar({
     return (
         <div className="flex items-center justify-between h-8 px-4 bg-[#1e1e1e] border-b border-neutral-800 text-neutral-300">
             {/* Left section - AI Actions */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
+                <WorkspaceSelector />
                 {onCodeActionsClick && (
                     <button
                         onClick={onCodeActionsClick}

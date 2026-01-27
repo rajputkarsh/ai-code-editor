@@ -13,7 +13,7 @@
 
 import { eq, and, desc } from 'drizzle-orm';
 import { getDb, schema } from '@/lib/db';
-import { Workspace, VFSStructure, EditorState } from '../types';
+import { Workspace, VFSStructure, EditorState, WorkspaceSource, WorkspaceType } from '../types';
 import { serializeVFS, serializeEditorState } from './serialization';
 import {
   calculateVFSSize,
@@ -23,7 +23,11 @@ import {
 } from './storage-utils';
 import { env } from '@/lib/config/env';
 
-const { workspaces: workspacesTable } = schema;
+const { workspaces: workspacesTable, workspaceSettings: workspaceSettingsTable } = schema;
+
+function getWorkspaceTypeFromSource(source: WorkspaceSource): WorkspaceType {
+  return source === 'github' ? 'github' : 'cloud';
+}
 
 /**
  * Get total storage used by a user across all workspaces
@@ -277,6 +281,7 @@ export async function loadWorkspace(
         id: row.id,
         name: row.name,
         source: row.source as 'zip' | 'github' | 'manual',
+        type: getWorkspaceTypeFromSource(row.source as WorkspaceSource),
         createdAt: row.createdAt,
         lastOpenedAt: row.lastOpenedAt,
         userId: row.userId,
@@ -304,6 +309,7 @@ export async function listWorkspaces(userId: string): Promise<Array<{
   id: string;
   name: string;
   source: string;
+  type: WorkspaceType;
   lastOpenedAt: Date;
   createdAt: Date;
 }>> {
@@ -323,10 +329,154 @@ export async function listWorkspaces(userId: string): Promise<Array<{
       .where(eq(workspacesTable.userId, userId))
       .orderBy(desc(workspacesTable.lastOpenedAt));
 
-    return result;
+    return result.map((row) => ({
+      ...row,
+      type: getWorkspaceTypeFromSource(row.source as WorkspaceSource),
+    }));
   } catch (error) {
     console.error('Failed to list workspaces:', error);
     return [];
+  }
+}
+
+/**
+ * Get active workspace ID for a user
+ *
+ * The active workspace ID is stored server-side to ensure all operations
+ * can be scoped consistently across API handlers and server actions.
+ */
+export async function getActiveWorkspaceId(userId: string): Promise<string | null> {
+  const db = getDb();
+  if (!db) return null;
+
+  try {
+    const result = await db
+      .select({ activeWorkspaceId: workspaceSettingsTable.activeWorkspaceId })
+      .from(workspaceSettingsTable)
+      .where(eq(workspaceSettingsTable.userId, userId))
+      .limit(1);
+
+    return result.length > 0 ? result[0].activeWorkspaceId ?? null : null;
+  } catch (error) {
+    console.error('Failed to get active workspace:', error);
+    return null;
+  }
+}
+
+/**
+ * Set active workspace for a user
+ *
+ * Validates ownership before setting the active workspace and
+ * updates the workspace's lastOpenedAt timestamp.
+ */
+export async function setActiveWorkspace(userId: string, workspaceId: string): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+
+  try {
+    const ownedWorkspace = await db
+      .select({ id: workspacesTable.id })
+      .from(workspacesTable)
+      .where(
+        and(
+          eq(workspacesTable.id, workspaceId),
+          eq(workspacesTable.userId, userId)
+        )
+      )
+      .limit(1);
+
+    if (ownedWorkspace.length === 0) {
+      throw new Error('Workspace not found or not owned by user');
+    }
+
+    await db
+      .insert(workspaceSettingsTable)
+      .values({
+        userId,
+        activeWorkspaceId: workspaceId,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: workspaceSettingsTable.userId,
+        set: {
+          activeWorkspaceId: workspaceId,
+          updatedAt: new Date(),
+        },
+      });
+
+    await db
+      .update(workspacesTable)
+      .set({
+        lastOpenedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(workspacesTable.id, workspaceId),
+          eq(workspacesTable.userId, userId)
+        )
+      );
+  } catch (error) {
+    console.error('Failed to set active workspace:', error);
+    throw new Error('Failed to set active workspace');
+  }
+}
+
+/**
+ * Clear active workspace for a user
+ */
+export async function clearActiveWorkspace(userId: string): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+
+  try {
+    await db
+      .insert(workspaceSettingsTable)
+      .values({
+        userId,
+        activeWorkspaceId: null,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: workspaceSettingsTable.userId,
+        set: {
+          activeWorkspaceId: null,
+          updatedAt: new Date(),
+        },
+      });
+  } catch (error) {
+    console.error('Failed to clear active workspace:', error);
+    throw new Error('Failed to clear active workspace');
+  }
+}
+
+/**
+ * Rename a workspace
+ */
+export async function renameWorkspace(
+  userId: string,
+  workspaceId: string,
+  name: string
+): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+
+  try {
+    await db
+      .update(workspacesTable)
+      .set({
+        name,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(workspacesTable.id, workspaceId),
+          eq(workspacesTable.userId, userId)
+        )
+      );
+  } catch (error) {
+    console.error('Failed to rename workspace:', error);
+    throw new Error('Failed to rename workspace');
   }
 }
 
@@ -347,6 +497,11 @@ export async function deleteWorkspace(
   if (!db) return;
 
   try {
+    const activeWorkspaceId = await getActiveWorkspaceId(userId);
+    if (activeWorkspaceId === workspaceId) {
+      await clearActiveWorkspace(userId);
+    }
+
     await db
       .delete(workspacesTable)
       .where(
@@ -393,6 +548,7 @@ export async function getLastOpenedWorkspace(userId: string): Promise<Workspace 
         id: row.id,
         name: row.name,
         source: row.source as 'zip' | 'github' | 'manual',
+        type: getWorkspaceTypeFromSource(row.source as WorkspaceSource),
         createdAt: row.createdAt,
         lastOpenedAt: row.lastOpenedAt,
         userId: row.userId,

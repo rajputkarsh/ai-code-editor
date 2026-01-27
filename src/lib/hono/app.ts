@@ -32,5 +32,6 @@ import githubClerkApp from './routes/github-clerk'; // Updated to use Clerk OAut
 app.route('/health', health);
 app.route('/ai-chat', aiChatApp);
 app.route('/workspace', workspaceApp);
+app.route('/workspaces', workspaceApp);
 app.route('/inline-ai', inlineAIApp);
 app.route('/github', githubClerkApp); // Using Clerk-based GitHub integration

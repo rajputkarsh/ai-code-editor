@@ -9,7 +9,11 @@
  * - Validate data integrity during conversion
  */
 
-import { Workspace, SerializedWorkspace, VFSStructure, EditorState } from '../types';
+import { Workspace, SerializedWorkspace, VFSStructure, EditorState, WorkspaceSource, WorkspaceType } from '../types';
+
+function getWorkspaceTypeFromSource(source: WorkspaceSource): WorkspaceType {
+  return source === 'github' ? 'github' : 'cloud';
+}
 
 function sanitizeJsonValue(value: unknown): unknown {
   if (typeof value === 'string') {
@@ -89,6 +93,7 @@ export function deserializeWorkspace(serialized: SerializedWorkspace): Workspace
       id: serialized.id,
       name: serialized.name,
       source: serialized.source,
+      type: getWorkspaceTypeFromSource(serialized.source as WorkspaceSource),
       createdAt: new Date(serialized.createdAt),
       lastOpenedAt: new Date(serialized.lastOpenedAt),
       userId: serialized.userId,

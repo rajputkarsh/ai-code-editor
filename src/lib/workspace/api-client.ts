@@ -7,9 +7,9 @@
  * All methods automatically include authentication via cookies (Clerk session).
  */
 
-import type { Workspace, VFSStructure, EditorState } from './types';
+import type { Workspace, VFSStructure, EditorState, WorkspaceType, WorkspaceSource, GitHubMetadata } from './types';
 
-const API_BASE = '/api/workspace';
+const API_BASE = '/api/workspaces';
 
 /**
  * Create a new workspace on the server
@@ -17,15 +17,29 @@ const API_BASE = '/api/workspace';
 export async function createWorkspaceAPI(workspace: {
   id: string;
   name: string;
-  source: 'zip' | 'github' | 'manual';
+  type: WorkspaceType;
+  source?: WorkspaceSource;
   vfs: VFSStructure;
   editorState?: EditorState;
+  githubMetadata?: GitHubMetadata;
 }): Promise<{ id: string } | { error: string }> {
   try {
+    const githubMetadata = workspace.githubMetadata
+      ? {
+          ...workspace.githubMetadata,
+          lastSyncedAt: workspace.githubMetadata.lastSyncedAt
+            ? workspace.githubMetadata.lastSyncedAt.toISOString()
+            : undefined,
+        }
+      : undefined;
+
     const response = await fetch(API_BASE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(workspace),
+      body: JSON.stringify({
+        ...workspace,
+        githubMetadata,
+      }),
     });
 
     if (!response.ok) {
@@ -52,7 +66,25 @@ export async function loadWorkspaceAPI(workspaceId: string): Promise<Workspace |
       return null;
     }
 
-    return await response.json();
+    const workspace = await response.json();
+    const githubMetadata = workspace.metadata?.githubMetadata
+      ? {
+          ...workspace.metadata.githubMetadata,
+          lastSyncedAt: workspace.metadata.githubMetadata.lastSyncedAt
+            ? new Date(workspace.metadata.githubMetadata.lastSyncedAt)
+            : undefined,
+        }
+      : undefined;
+
+    return {
+      ...workspace,
+      metadata: {
+        ...workspace.metadata,
+        createdAt: new Date(workspace.metadata.createdAt),
+        lastOpenedAt: new Date(workspace.metadata.lastOpenedAt),
+        githubMetadata,
+      },
+    };
   } catch (error) {
     console.error('API error loading workspace:', error);
     return null;
@@ -100,64 +132,74 @@ export async function deleteWorkspaceAPI(workspaceId: string): Promise<boolean> 
 /**
  * List all workspaces for the current user
  */
-export async function listWorkspacesAPI(): Promise<Array<{
-  id: string;
-  name: string;
-  source: string;
-  lastOpenedAt: Date;
-  createdAt: Date;
-}>> {
+export async function listWorkspacesAPI(): Promise<{
+  workspaces: Array<{
+    id: string;
+    name: string;
+    source: WorkspaceSource;
+    type: WorkspaceType;
+    lastOpenedAt: Date;
+    createdAt: Date;
+  }>;
+  activeWorkspaceId: string | null;
+}> {
   try {
     const response = await fetch(API_BASE);
 
     if (!response.ok) {
-      return [];
+      return { workspaces: [], activeWorkspaceId: null };
     }
 
     const data = await response.json();
     
     // Convert date strings to Date objects
-    return data.workspaces.map((ws: any) => ({
+    const workspaces = data.workspaces.map((ws: any) => ({
       ...ws,
       lastOpenedAt: new Date(ws.lastOpenedAt),
       createdAt: new Date(ws.createdAt),
     }));
+
+    return {
+      workspaces,
+      activeWorkspaceId: data.activeWorkspaceId ?? null,
+    };
   } catch (error) {
     console.error('API error listing workspaces:', error);
-    return [];
+    return { workspaces: [], activeWorkspaceId: null };
   }
 }
 
 /**
- * Get the most recently opened workspace
+ * Rename a workspace
  */
-export async function getLatestWorkspaceAPI(): Promise<Workspace | null> {
+export async function renameWorkspaceAPI(workspaceId: string, name: string): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE}/latest/get`);
+    const response = await fetch(`${API_BASE}/${workspaceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
 
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    
-    if (!data.workspace) {
-      return null;
-    }
-
-    // Convert date strings to Date objects
-    const workspace = data.workspace;
-    return {
-      ...workspace,
-      metadata: {
-        ...workspace.metadata,
-        createdAt: new Date(workspace.metadata.createdAt),
-        lastOpenedAt: new Date(workspace.metadata.lastOpenedAt),
-      },
-    };
+    return response.ok;
   } catch (error) {
-    console.error('API error getting latest workspace:', error);
-    return null;
+    console.error('API error renaming workspace:', error);
+    return false;
+  }
+}
+
+/**
+ * Set the active workspace
+ */
+export async function activateWorkspaceAPI(workspaceId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/${workspaceId}/activate`, {
+      method: 'POST',
+    });
+
+    return response.ok;
+  } catch (error) {
+    console.error('API error activating workspace:', error);
+    return false;
   }
 }
 

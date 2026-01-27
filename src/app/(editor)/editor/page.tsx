@@ -406,7 +406,14 @@ export default function EditorPage() {
             toast.info(`🔄 Creating new workspace for ${owner}/${cleanRepoName}...`, 3000);
             
             // Create a new clean workspace (this clears all existing files)
-            const { vfs: freshVfs } = await createNewWorkspace(cleanRepoName, { save: false });
+            const { vfs: freshVfs } = await createNewWorkspace(cleanRepoName, {
+                save: false,
+                type: 'github',
+                githubMetadata: {
+                    repositoryUrl: repoUrl,
+                    branch,
+                },
+            });
             const freshRootId = freshVfs.getRootId();
             
             toast.info(`📥 Importing ${owner}/${cleanRepoName} from branch ${branch}...`, 3000);

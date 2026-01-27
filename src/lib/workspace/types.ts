@@ -21,6 +21,7 @@ export interface VFSStructure {
 }
 
 export type WorkspaceSource = 'zip' | 'github' | 'manual';
+export type WorkspaceType = 'cloud' | 'github';
 
 /**
  * GitHub repository metadata for GitHub-linked workspaces
@@ -41,6 +42,12 @@ export interface WorkspaceMetadata {
   id: string;
   name: string;
   source: WorkspaceSource;
+  /**
+   * Workspace type determines the source of truth.
+   * - cloud: application backend is the source of truth
+   * - github: GitHub repository is the source of truth
+   */
+  type: WorkspaceType;
   createdAt: Date;
   lastOpenedAt: Date;
   userId?: string; // Owner of the workspace (for cloud persistence)

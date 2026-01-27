@@ -56,6 +56,21 @@ export type Workspace = typeof workspaces.$inferSelect;
 export type NewWorkspace = typeof workspaces.$inferInsert;
 
 /**
+ * Workspace Settings Table (Phase 2.5)
+ *
+ * Stores per-user workspace settings, including the active workspace.
+ * This provides a server-side source of truth for active workspace selection.
+ */
+export const workspaceSettings = pgTable('workspace_settings', {
+  userId: text('user_id').primaryKey(),
+  activeWorkspaceId: uuid('active_workspace_id'),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type WorkspaceSettings = typeof workspaceSettings.$inferSelect;
+export type NewWorkspaceSettings = typeof workspaceSettings.$inferInsert;
+
+/**
  * GitHub Authentication Table (Phase 2)
  * 
  * Stores GitHub OAuth tokens for users who have connected their GitHub account.

@@ -26,6 +26,9 @@ import {
   listWorkspaces,
   deleteWorkspace,
   getLastOpenedWorkspace,
+  getActiveWorkspaceId,
+  setActiveWorkspace,
+  renameWorkspace,
 } from '@/lib/workspace/persistence';
 import {
   StorageLimitExceededError,
@@ -42,7 +45,8 @@ export const workspaceApp = new Hono();
 const createWorkspaceSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(255),
-  source: z.enum(['zip', 'github', 'manual']),
+  type: z.enum(['cloud', 'github']).optional(),
+  source: z.enum(['zip', 'github', 'manual']).optional(),
   vfs: z.object({
     nodes: z.record(z.string(), z.any()),
     rootId: z.string(),
@@ -67,6 +71,25 @@ const createWorkspaceSchema = z.object({
     lastSyncedCommit: z.string().optional(),
     lastSyncedAt: z.string().datetime().optional(),
   }).optional(),
+}).superRefine((data, ctx) => {
+  const resolvedSource = data.source ?? (data.type === 'github' ? 'github' : 'manual');
+  const resolvedType = data.type ?? (resolvedSource === 'github' ? 'github' : 'cloud');
+
+  if (resolvedType === 'github' && !data.githubMetadata) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'GitHub workspaces require githubMetadata',
+      path: ['githubMetadata'],
+    });
+  }
+
+  if (resolvedType === 'github' && resolvedSource !== 'github') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'GitHub workspaces must use source="github"',
+      path: ['source'],
+    });
+  }
 });
 
 /**
@@ -91,6 +114,10 @@ const updateWorkspaceSchema = z.object({
       column: z.number(),
     }).optional(),
   }).optional(),
+});
+
+const renameWorkspaceSchema = z.object({
+  name: z.string().min(1).max(255),
 });
 
 /**
@@ -118,6 +145,9 @@ workspaceApp.post(
       const userId = getUserId(c);
       const data = c.req.valid('json');
 
+      const resolvedSource = data.source ?? (data.type === 'github' ? 'github' : 'manual');
+      const resolvedType = data.type ?? (resolvedSource === 'github' ? 'github' : 'cloud');
+
       // Convert GitHub metadata dates from strings to Date objects
       const githubMetadata = data.githubMetadata ? {
         repositoryUrl: data.githubMetadata.repositoryUrl,
@@ -132,7 +162,8 @@ workspaceApp.post(
         metadata: {
           id: data.id,
           name: data.name,
-          source: data.source,
+          source: resolvedSource,
+          type: resolvedType,
           createdAt: new Date(),
           lastOpenedAt: new Date(),
           userId,
@@ -150,6 +181,8 @@ workspaceApp.post(
           503
         );
       }
+
+      await setActiveWorkspace(userId, workspaceId);
 
       return c.json({ id: workspaceId }, 201);
     } catch (error) {
@@ -255,6 +288,29 @@ workspaceApp.put(
 );
 
 /**
+ * PATCH /workspace/:id
+ * Rename a workspace
+ */
+workspaceApp.patch(
+  '/:id',
+  zValidator('json', renameWorkspaceSchema),
+  async (c) => {
+    try {
+      const userId = getUserId(c);
+      const workspaceId = c.req.param('id');
+      const data = c.req.valid('json');
+
+      await renameWorkspace(userId, workspaceId, data.name);
+
+      return c.json({ success: true });
+    } catch (error) {
+      console.error('Error renaming workspace:', error);
+      return c.json({ error: 'Failed to rename workspace' }, 500);
+    }
+  }
+);
+
+/**
  * DELETE /workspace/:id
  * Delete a workspace
  */
@@ -273,6 +329,24 @@ workspaceApp.delete('/:id', async (c) => {
 });
 
 /**
+ * POST /workspace/:id/activate
+ * Set the active workspace for the authenticated user
+ */
+workspaceApp.post('/:id/activate', async (c) => {
+  try {
+    const userId = getUserId(c);
+    const workspaceId = c.req.param('id');
+
+    await setActiveWorkspace(userId, workspaceId);
+
+    return c.json({ activeWorkspaceId: workspaceId });
+  } catch (error) {
+    console.error('Error activating workspace:', error);
+    return c.json({ error: 'Failed to activate workspace' }, 500);
+  }
+});
+
+/**
  * GET /workspaces
  * List all workspaces for the authenticated user
  */
@@ -280,8 +354,9 @@ workspaceApp.get('/', async (c) => {
   try {
     const userId = getUserId(c);
     const workspaces = await listWorkspaces(userId);
+    const activeWorkspaceId = await getActiveWorkspaceId(userId);
 
-    return c.json({ workspaces });
+    return c.json({ workspaces, activeWorkspaceId });
   } catch (error) {
     console.error('Error listing workspaces:', error);
     return c.json({ error: 'Failed to list workspaces' }, 500);

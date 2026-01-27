@@ -14,7 +14,7 @@
 
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useWorkspace } from './workspace-provider';
 import { useEditorState } from './editor-state';
 import type { EditorState } from '@/lib/workspace/types';
@@ -29,7 +29,8 @@ import type { EditorState } from '@/lib/workspace/types';
  */
 export function useEditorStatePersistence() {
   const { workspace, markDirty, setEditorStateCapture } = useWorkspace();
-  const { tabs, activeTabId, activeSecondaryTabId, isSplit, openFile, setActiveTab, toggleSplit } = useEditorState();
+  const { tabs, activeTabId, activeSecondaryTabId, isSplit, openFile, setActiveTab, toggleSplit, resetState } = useEditorState();
+  const previousWorkspaceIdRef = useRef<string | null>(null);
 
   /**
    * Restore editor state from workspace
@@ -42,6 +43,16 @@ export function useEditorStatePersistence() {
    * 
    * Note: Cursor positions are restored by Monaco editor when files are opened.
    */
+  useEffect(() => {
+    const currentWorkspaceId = workspace?.metadata.id ?? null;
+
+    if (previousWorkspaceIdRef.current && currentWorkspaceId && previousWorkspaceIdRef.current !== currentWorkspaceId) {
+      resetState();
+    }
+
+    previousWorkspaceIdRef.current = currentWorkspaceId;
+  }, [resetState, workspace?.metadata.id]);
+
   useEffect(() => {
     if (!workspace?.editorState || tabs.length > 0) {
       // Skip if no editor state to restore, or if tabs already exist (already restored)

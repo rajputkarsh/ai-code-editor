@@ -1,28 +1,25 @@
-# PHASE 2 – Inline AI & GitHub Foundations Execution Prompt
+# PHASE 2.5 – Multi-Workspace Management Execution Prompt
 
-You are a **senior full-stack engineer** implementing **PHASE 2: Inline AI & GitHub Foundations** for a **Next.js (App Router) web-based code editor**.
+You are a **senior full-stack engineer** implementing **PHASE 2.5: Multi-Workspace Management** for a **Next.js (App Router) web-based code editor**.
 
-Previous phases completed:
-- Core Editor (Monaco, workspace, persistence)
+Previous phases already implemented:
 - Authentication (Clerk)
-- Workspace Persistence & Sync
-- Contextual AI Chat (Gemini)
+- Workspace persistence & sync
+- Inline AI & GitHub foundations
 
-This phase introduces **inline AI coding** and **GitHub repository connectivity**.
-
-You must follow all existing architectural boundaries strictly.
+This phase introduces **multiple workspaces as a first-class concept**.
 
 ---
 
 ## 🎯 PHASE GOAL
 
-Enable users to:
-- Receive **inline AI coding assistance**
-- Perform **safe, previewable AI code actions**
-- Connect and work with **real GitHub repositories**
-- See **Git-aware editor state**
+Enable authenticated users to:
+- Create, rename, delete multiple workspaces
+- Switch between workspaces safely
+- Work with both Cloud and GitHub-linked workspaces
+- Ensure all editor, AI, and Git operations are scoped to the active workspace
 
-This phase must **not introduce agent autonomy** or unsafe automation.
+This phase must **not introduce collaboration, billing UI, or agent logic**.
 
 ---
 
@@ -30,158 +27,146 @@ This phase must **not introduce agent autonomy** or unsafe automation.
 
 ---
 
-## 1️⃣ Inline AI Capabilities
+## 1️⃣ Workspace Lifecycle Management
 
-### Requirements
-- Inline AI code completions inside Monaco
-- Suggestions triggered via:
-  - Keyboard shortcut (e.g. `Cmd/Ctrl + Enter`)
-- Inline ghost-text or suggestion overlay
-
-### Behavior
-- User can:
-  - Accept suggestion
-  - Reject suggestion
-- Suggestions must:
-  - Be contextual (cursor + file)
-  - Never auto-apply without confirmation
-
-### Technical Rules
-- Inline AI must:
-  - Use Gemini (hosted)
-  - Stream tokens
-  - Be cancelable
-- No background jobs (no Inngest here)
-
----
-
-## 2️⃣ AI Code Actions (Safe & Explicit)
-
-### Supported Actions
-Right-click or command-palette actions:
-- Refactor function
-- Convert file to TypeScript
-- Add comments
-- Improve performance
-
-### Safety Rules
-- AI must **never** modify files directly
-- All actions must:
-  - Generate a diff
-  - Show preview
-  - Require explicit user approval
-
-### Implementation
-- Generate patch/diff from AI output
-- Apply changes only after user confirms
-
----
-
-## 3️⃣ Explain & Trace
-
-### Scope
-Implement read-only explainability tools:
-- Explain this file
-- Explain this function
-- Step-by-step logic explanation
+### Required Operations
+Implement backend + frontend support for:
+- Create workspace
+- Rename workspace
+- Delete workspace (hard delete)
+- Switch active workspace
 
 ### Rules
-- No code modification
-- Explanation only
-- Uses same context pipeline as AI chat
+- Each workspace must have:
+  - `workspaceId` (UUID)
+  - `name`
+  - `type` (`cloud` | `github`)
+  - `createdAt`
+  - `lastOpenedAt`
+- Deleting a workspace permanently removes all associated data
+- No undo or archive behavior
 
 ---
 
-## 4️⃣ Prompt History
+## 2️⃣ Workspace Types
 
-### Requirements
-- Store AI prompts locally per session
-- Support:
-  - Viewing past prompts
-  - Re-running previous actions
+### Supported Types
+- **Cloud Workspace**
+  - Source of truth: application backend
+- **GitHub-Linked Workspace**
+  - Source of truth: GitHub repository
+  - Local changes tracked separately
 
 ### Constraints
-- No cloud persistence yet
-- No analytics
-- Session-scoped only
+- Workspace type is:
+  - Explicit at creation time
+  - Immutable after creation
+- GitHub workspaces must reference:
+  - Repository
+  - Branch
 
 ---
 
-## 5️⃣ GitHub Authentication
-
-### Requirements
-- OAuth-based GitHub authentication
-- Use GitHub OAuth **in addition to Clerk**
-- Permission scopes:
-  - Read-only
-  - Read & Write
+## 3️⃣ Active Workspace Semantics (CRITICAL)
 
 ### Rules
-- GitHub auth is:
-  - Optional per user
-  - Explicitly granted
-- Token storage must be:
-  - Server-side only
-  - User-scoped
-
----
-
-## 6️⃣ Repository Import & Sync
-
-### Supported Imports
-- GitHub repository picker
-- Public GitHub repo URL
-
-### Import Options
-- Branch selection
-- Shallow clone only
+- Only **one workspace can be active at a time**
+- All operations must be scoped to:
+  - Active workspace ID
+- Active workspace ID must be:
+  - Stored server-side
+  - Available in Server Actions and Hono APIs
 
 ### Behavior
-- Imported repo becomes a workspace
-- GitHub repo is treated as:
-  - External source of truth
-  - Not auto-synced
+- Switching workspace:
+  - Persists current workspace state
+  - Loads selected workspace state
+- No page reload required
 
 ---
 
-## 7️⃣ Git Awareness in Editor
+## 4️⃣ Workspace Selector UI
 
-### Editor Indicators
-- Modified files
-- New files
-- Deleted files
+### Scope
+Implement a **minimal workspace selector** in the editor shell.
 
-### Diff Support
-- Diff vs HEAD
-- Per-file diff view
+### UI Requirements
+- Show:
+  - Workspace name
+  - Workspace type (Cloud / GitHub)
+  - Last opened timestamp
+- Allow:
+  - Switching workspaces
+  - Creating a new workspace
+  - Deleting current workspace
 
-### Change Tracking
-- Track local changes separately from GitHub
-- No auto-commit
-- No auto-push
+### Constraints
+- Minimal UI
+- No search
+- No drag-and-drop
+- No reordering
 
 ---
 
-## 🔐 SECURITY & BOUNDARIES
+## 5️⃣ Backend APIs (Hono)
 
-- GitHub tokens:
-  - Never exposed to client
-  - Never logged
-- Repo access:
-  - Validated per request
-- Workspace ownership enforced
+### Required APIs
+Implement workspace APIs via **Hono**:
+- `GET /workspaces`
+- `POST /workspaces`
+- `PATCH /workspaces/:id`
+- `DELETE /workspaces/:id`
+- `POST /workspaces/:id/activate`
+
+### Rules
+- All APIs must:
+  - Require authentication (Clerk)
+  - Enforce workspace ownership
+- Workspace ID must always be validated against `userId`
+
+---
+
+## 6️⃣ State Management & Integration
+
+### Frontend
+- Workspace context must expose:
+  - Workspace list
+  - Active workspace
+  - Switch/create/delete handlers
+
+### Editor Integration Rules
+- Editor components must:
+  - Consume workspace context
+  - Never call workspace APIs directly
+- Editor logic must not care how many workspaces exist
+
+---
+
+## 7️⃣ Limits & Future Billing Hooks
+
+### Scope (Infrastructure Only)
+- Enforce:
+  - Maximum workspaces per user
+- Enforcement:
+  - Server-side only
+  - Silent (no UI)
+
+### Notes
+- No billing UI
+- No plan selection
+- No upgrade prompts
 
 ---
 
 ## 🚫 OUT OF SCOPE (DO NOT IMPLEMENT)
 
-- Agent mode
-- Background AI jobs
-- Automatic commits or PRs
-- GitHub webhooks
-- Real-time collaboration
-- Billing enforcement
-- Usage analytics
+- Workspace sharing
+- Team workspaces
+- Workspace templates
+- Workspace cloning
+- Archiving / soft delete
+- Billing UI or Stripe integration
+- Collaboration or presence
 
 ---
 
@@ -189,35 +174,32 @@ Implement read-only explainability tools:
 
 - TypeScript strict
 - No `any`
-- Clear separation between:
-  - Editor
-  - AI logic
-  - GitHub logic
-- Comments explaining:
-  - Why changes are non-destructive
-  - GitHub source-of-truth rules
+- Clear data models:
+  - Workspace
+  - WorkspaceMetadata
+- Explicit comments explaining:
+  - Active workspace semantics
+  - Source-of-truth rules
+- No duplicated workspace logic
 
 ---
 
 ## ✅ EXPECTED OUTPUT
 
 At the end of this phase:
-1. Inline AI suggestions work safely
-2. AI code actions show diffs before apply
-3. Files can be explained and traced
-4. GitHub repositories can be imported
-5. Editor shows Git-aware file status
-6. No code changes happen without user consent
+1. Users can manage multiple workspaces
+2. Workspace switching is seamless and safe
+3. Active workspace is always explicit
+4. Cloud and GitHub workspaces behave correctly
+5. Editor, AI, and Git operations are workspace-scoped
+6. Foundation is ready for billing, teams, and agent mode
 
 ---
 
 ## 🧠 FINAL INSTRUCTION
 
-This phase is about **augmenting developers**, not replacing them.
+This phase defines **how users organize their work**.
 
-Optimize for:
-- Trust
-- Visibility
-- Reversibility
+Do not add collaboration, billing, or automation.
 
-Do not introduce autonomy or background agents yet.
+If something feels useful later, **leave a comment and stop**.

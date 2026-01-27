@@ -125,6 +125,7 @@ export const Button: React.FC<ButtonProps> = ({ label, onClick }) => {
     id: crypto.randomUUID(),
     name: 'Sample React App',
     source: 'manual',
+    type: 'cloud',
     createdAt: new Date(),
     lastOpenedAt: new Date(),
   };
@@ -193,6 +194,7 @@ node index.js
     id: crypto.randomUUID(),
     name: 'Sample JavaScript Project',
     source: 'manual',
+    type: 'cloud',
     createdAt: new Date(),
     lastOpenedAt: new Date(),
   };

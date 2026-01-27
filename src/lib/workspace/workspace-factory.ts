@@ -4,20 +4,31 @@
  */
 
 import { VirtualFileSystem } from './vfs';
-import { Workspace, WorkspaceMetadata } from './types';
+import { Workspace, WorkspaceMetadata, WorkspaceType, WorkspaceSource, GitHubMetadata } from './types';
 
 /**
  * Create a new empty workspace
  */
-export function createEmptyWorkspace(name: string = 'New Project'): Workspace {
+export function createEmptyWorkspace(
+  name: string = 'New Project',
+  options?: {
+    type?: WorkspaceType;
+    source?: WorkspaceSource;
+    githubMetadata?: GitHubMetadata;
+  }
+): Workspace {
   const vfs = new VirtualFileSystem();
+  const resolvedType = options?.type ?? 'cloud';
+  const resolvedSource = options?.source ?? (resolvedType === 'github' ? 'github' : 'manual');
   
   const metadata: WorkspaceMetadata = {
     id: crypto.randomUUID(),
     name,
-    source: 'manual',
+    source: resolvedSource,
+    type: resolvedType,
     createdAt: new Date(),
     lastOpenedAt: new Date(),
+    githubMetadata: options?.githubMetadata,
   };
   
   return {
