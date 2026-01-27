@@ -328,7 +328,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const currentVfsStructure = currentVfs.getStructure();
     
     // Capture current editor state if capture function is registered
-    const currentEditorState = editorStateCaptureFn ? editorStateCaptureFn : currentWorkspace.editorState;
+    const currentEditorState =
+      typeof editorStateCaptureFn === 'function'
+        ? editorStateCaptureFn()
+        : currentWorkspace.editorState;
     
     autosaveManagerRef.current.trigger(
       {
@@ -501,7 +504,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     setError(null);
 
     try {
-      const editorState = editorStateCaptureFn ? editorStateCaptureFn() : undefined;
+      const editorState =
+        typeof editorStateCaptureFn === 'function'
+          ? editorStateCaptureFn()
+          : undefined;
       await saveWorkspace(editorState);
 
       const activated = await activateWorkspaceAPI(workspaceId);
