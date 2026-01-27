@@ -5,7 +5,7 @@
  * Main AI chat panel with collapsible sidebar
  */
 
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAIChatState } from '../../stores/ai-chat-state';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -14,6 +14,13 @@ import { ChatErrorMessage } from './ChatErrorMessage';
 import { X, Trash2, MessageSquare } from 'lucide-react';
 import { PromptTemplate } from '@/lib/ai/prompt-templates';
 import { ChatContext } from '@/lib/ai/types';
+import { useWorkspace } from '../../stores/workspace-provider';
+import { useFileSystem } from '../../stores/file-system';
+import { generateAgentPlan } from '@/lib/ai/agent/planner';
+import { executeAgentStep } from '@/lib/ai/agent/executor';
+import { buildWorkspaceIndex, buildWorkspaceSnapshot, getFileContentsByPath } from '@/lib/ai/agent/workspace';
+import { AgentDiffViewer } from './AgentDiffViewer';
+import type { AgentMode, AgentStepChange } from '@/lib/ai/agent/types';
 
 interface AIChatPanelProps {
     onTemplateSelect?: (template: PromptTemplate) => void;
@@ -31,9 +38,46 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
         startStreaming,
         finishStreaming,
         contextInfo,
+        agentMode,
+        setAgentMode,
+        agentStage,
+        setAgentStage,
+        agentTask,
+        setAgentTask,
+        agentPlan,
+        setAgentPlan,
+        agentStepResult,
+        setAgentStepResult,
+        agentCurrentStepIndex,
+        setAgentCurrentStepIndex,
+        agentPermissions,
+        setAgentPermissions,
+        permissionsApproved,
+        setPermissionsApproved,
+        agentError,
+        setAgentError,
+        resetAgentState,
     } = useAIChatState();
 
+    const { vfs } = useWorkspace();
+    const { files, createFile, createFolder, updateFileContent, deleteNode, rootId } = useFileSystem();
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const workspaceIndex = useMemo(() => {
+        if (!vfs) return null;
+        return buildWorkspaceIndex(vfs);
+    }, [vfs, files]);
+    const workspaceFiles = useMemo(() => {
+        if (!workspaceIndex) return [];
+        return workspaceIndex.entries
+            .filter((entry) => entry.type === 'file')
+            .map((entry) => entry.path);
+    }, [workspaceIndex]);
+    const originalContentByPath = useMemo(() => {
+        if (!vfs || !agentStepResult) return {};
+        const paths = agentStepResult.changes.map((change) => change.filePath);
+        return getFileContentsByPath(vfs, paths);
+    }, [vfs, agentStepResult, files]);
 
     // Auto-scroll to bottom when new messages arrive
     // Auto-scroll to bottom when messages change
@@ -44,6 +88,120 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
     // Track if we're already processing to avoid duplicates
     const processingRef = useRef(false);
     const lastProcessedCountRef = useRef(0);
+
+    const normalizePath = useCallback((path: string) => {
+        const trimmed = path.trim();
+        if (!trimmed) return '/';
+        const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+        return withSlash.replace(/\/+$/, '');
+    }, []);
+
+    const findChildFolderId = useCallback(
+        (parentId: string, name: string) => {
+            const child = Object.values(files).find(
+                (node) => node.parentId === parentId && node.name === name && node.type === 'folder'
+            );
+            return child?.id;
+        },
+        [files]
+    );
+
+    const ensureFolderPath = useCallback(
+        (folderPath: string) => {
+            const normalized = normalizePath(folderPath);
+            const segments = normalized.split('/').filter(Boolean);
+            let currentId = rootId;
+
+            segments.forEach((segment) => {
+                const existingId = findChildFolderId(currentId, segment);
+                if (existingId) {
+                    currentId = existingId;
+                } else {
+                    currentId = createFolder(currentId, segment);
+                }
+            });
+
+            return currentId;
+        },
+        [createFolder, findChildFolderId, normalizePath, rootId]
+    );
+
+    const createFileByPath = useCallback(
+        (filePath: string, content: string) => {
+            const normalized = normalizePath(filePath);
+            const segments = normalized.split('/').filter(Boolean);
+            const fileName = segments.pop();
+            if (!fileName) {
+                throw new Error('Invalid file path for creation.');
+            }
+            const folderPath = `/${segments.join('/')}`;
+            const parentId = ensureFolderPath(folderPath);
+            return createFile(parentId, fileName, content);
+        },
+        [createFile, ensureFolderPath, normalizePath]
+    );
+
+    const applyStepChanges = useCallback(
+        (changes: AgentStepChange[]) => {
+            if (!workspaceIndex) {
+                throw new Error('Workspace index is not available.');
+            }
+
+            changes.forEach((change) => {
+                const normalizedPath = normalizePath(change.filePath);
+                const fileId = workspaceIndex.pathToId.get(normalizedPath);
+
+                if (change.changeType === 'modify') {
+                    if (!agentPermissions.modify) {
+                        throw new Error('Modify permission not granted.');
+                    }
+                    if (!fileId) {
+                        throw new Error(`File not found for modify: ${normalizedPath}`);
+                    }
+                    if (change.updatedContent === undefined) {
+                        throw new Error(`Missing updatedContent for modify: ${normalizedPath}`);
+                    }
+                    updateFileContent(fileId, change.updatedContent);
+                    return;
+                }
+
+                if (change.changeType === 'create') {
+                    if (!agentPermissions.create) {
+                        throw new Error('Create permission not granted.');
+                    }
+                    if (change.updatedContent === undefined) {
+                        throw new Error(`Missing updatedContent for create: ${normalizedPath}`);
+                    }
+                    if (fileId) {
+                        updateFileContent(fileId, change.updatedContent);
+                    } else {
+                        createFileByPath(normalizedPath, change.updatedContent);
+                    }
+                    return;
+                }
+
+                if (change.changeType === 'delete') {
+                    if (!agentPermissions.delete) {
+                        throw new Error('Delete permission not granted.');
+                    }
+                    if (!fileId) {
+                        throw new Error(`File not found for delete: ${normalizedPath}`);
+                    }
+                    deleteNode(fileId);
+                }
+            });
+        },
+        [
+            agentPermissions.create,
+            agentPermissions.delete,
+            agentPermissions.modify,
+            createFileByPath,
+            deleteNode,
+            normalizePath,
+            updateFileContent,
+            workspaceIndex,
+        ]
+    );
 
     // Handle sending a message
     const handleSendMessage = useCallback(async (content: string, skipAddingMessage = false) => {
@@ -164,10 +322,192 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
         }
     }, [messages, addMessage, startStreaming, setStreamingMessage, finishStreaming]);
 
+    const handleModeChange = useCallback(
+        (nextMode: AgentMode) => {
+            setAgentMode(nextMode);
+            if (nextMode === 'chat') {
+                resetAgentState();
+            }
+        },
+        [resetAgentState, setAgentMode]
+    );
+
+    const handleStartAgentTask = useCallback(
+        (content: string) => {
+            const userMessage: ChatMessageType = {
+                role: 'user',
+                content,
+            };
+            addMessage(userMessage);
+            resetAgentState();
+            setAgentTask(content);
+            setAgentStage('awaiting_permissions');
+            setAgentError(null);
+        },
+        [addMessage, resetAgentState, setAgentError, setAgentStage, setAgentTask]
+    );
+
+    const handleApprovePermissions = useCallback(async () => {
+        if (!agentTask) return;
+        if (!vfs) {
+            setAgentError('Workspace is still loading.');
+            setAgentStage('error');
+            return;
+        }
+
+        setPermissionsApproved(true);
+        setAgentStage('planning');
+        setAgentError(null);
+
+        try {
+            const snapshot = buildWorkspaceSnapshot(vfs);
+            const plan = await generateAgentPlan({
+                task: agentTask,
+                workspaceFiles: snapshot.files
+                    .filter((file) => file.type === 'file')
+                    .map((file) => file.path),
+                permissions: agentPermissions,
+            });
+            setAgentPlan(plan);
+            setAgentStage('awaiting_plan_approval');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to generate plan';
+            setAgentError(message);
+            setAgentStage('error');
+        }
+    }, [
+        agentPermissions,
+        agentTask,
+        setAgentError,
+        setAgentPlan,
+        setAgentStage,
+        setPermissionsApproved,
+        vfs,
+    ]);
+
+    const runNextStep = useCallback(
+        async (nextIndex: number) => {
+            if (!agentPlan || !agentTask) return;
+            if (!vfs) {
+                setAgentError('Workspace is still loading.');
+                setAgentStage('error');
+                return;
+            }
+
+            const step = agentPlan.steps[nextIndex];
+            setAgentCurrentStepIndex(nextIndex);
+            setAgentStage('executing');
+            setAgentError(null);
+
+            try {
+                const filesForContext = Array.from(
+                    new Set([...step.filesToRead, ...step.filesToModify])
+                ).map(normalizePath);
+                const fileContents = getFileContentsByPath(vfs, filesForContext);
+
+                const result = await executeAgentStep({
+                    task: agentTask,
+                    step,
+                    permissions: agentPermissions,
+                    existingFiles: workspaceFiles,
+                    fileContents,
+                });
+
+                setAgentStepResult(result);
+                setAgentStage('awaiting_step_approval');
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Failed to execute step';
+                setAgentError(message);
+                setAgentStage('error');
+            }
+        },
+        [
+            agentPermissions,
+            agentPlan,
+            agentTask,
+            normalizePath,
+            setAgentCurrentStepIndex,
+            setAgentError,
+            setAgentStage,
+            setAgentStepResult,
+            vfs,
+            workspaceFiles,
+        ]
+    );
+
+    const handleApprovePlan = useCallback(async () => {
+        if (!agentPlan) return;
+        // User approval gate before any execution begins.
+        await runNextStep(0);
+    }, [agentPlan, runNextStep]);
+
+    const handleApproveStep = useCallback(async () => {
+        if (!agentPlan || !agentStepResult) return;
+
+        try {
+            applyStepChanges(agentStepResult.changes);
+            setAgentStepResult(null);
+            const nextIndex = agentCurrentStepIndex + 1;
+            if (nextIndex >= agentPlan.steps.length) {
+                setAgentStage('completed');
+                return;
+            }
+            // Each step is reviewed before continuing to the next.
+            await runNextStep(nextIndex);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to apply step';
+            setAgentError(message);
+            setAgentStage('error');
+        }
+    }, [
+        agentCurrentStepIndex,
+        agentPlan,
+        agentStepResult,
+        applyStepChanges,
+        runNextStep,
+        setAgentError,
+        setAgentStage,
+        setAgentStepResult,
+    ]);
+
+    const handleRejectPlan = useCallback(() => {
+        setAgentPlan(null);
+        setAgentStage('completed');
+    }, [setAgentPlan, setAgentStage]);
+
+    const handleStopExecution = useCallback(() => {
+        setAgentStepResult(null);
+        setAgentStage('completed');
+    }, [setAgentStage, setAgentStepResult]);
+
+    const handlePermissionToggle = useCallback(
+        (key: 'read' | 'modify' | 'create' | 'delete') => {
+            setAgentPermissions({
+                ...agentPermissions,
+                [key]: !agentPermissions[key],
+            });
+        },
+        [agentPermissions, setAgentPermissions]
+    );
+
+    const handleRevokePermissions = useCallback(() => {
+        setPermissionsApproved(false);
+        setAgentPlan(null);
+        setAgentStepResult(null);
+        setAgentCurrentStepIndex(-1);
+        setAgentStage('awaiting_permissions');
+    }, [
+        setAgentCurrentStepIndex,
+        setAgentPlan,
+        setAgentStage,
+        setAgentStepResult,
+        setPermissionsApproved,
+    ]);
+
     // Auto-send when a new user message is added (from templates)
     useEffect(() => {
         // Skip if already processing or streaming
-        if (processingRef.current || isStreaming) {
+        if (processingRef.current || isStreaming || agentMode !== 'chat') {
             return;
         }
 
@@ -190,7 +530,7 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
                 lastProcessedCountRef.current = messages.length;
             }
         }
-    }, [messages, isStreaming, handleSendMessage]);
+    }, [agentMode, messages, isStreaming, handleSendMessage]);
 
     const handleTemplateSelect = (template: PromptTemplate) => {
         // Call the parent handler to generate the prompt with context
@@ -214,6 +554,24 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
         }
     };
 
+    const isAgentBusy = agentMode === 'agent' && !['idle', 'completed', 'error'].includes(agentStage);
+    const handleInputSend = useCallback(
+        (message: string) => {
+            if (agentMode === 'agent') {
+                handleStartAgentTask(message);
+            } else {
+                handleSendMessage(message);
+            }
+        },
+        [agentMode, handleSendMessage, handleStartAgentTask]
+    );
+    const inputPlaceholder =
+        agentMode === 'agent'
+            ? 'Describe the task for the agent...'
+            : isStreaming
+            ? 'AI is responding...'
+            : 'Ask about your code...';
+
     return (
         <div className="
             flex flex-col h-full bg-neutral-900 border-l border-neutral-800 
@@ -229,10 +587,34 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                     <MessageSquare className="w-4 h-4 text-purple-500 shrink-0" />
                     <h2 className="text-sm font-semibold text-neutral-200 truncate">
-                        AI Assistant
+                        {agentMode === 'agent' ? 'AI Agent' : 'AI Assistant'}
                     </h2>
                 </div>
                 <div className="flex items-center gap-1">
+                    <div className="flex items-center rounded border border-neutral-700 overflow-hidden mr-1">
+                        <button
+                            onClick={() => handleModeChange('chat')}
+                            className={`px-2 py-1 text-xs ${
+                                agentMode === 'chat'
+                                    ? 'bg-neutral-700 text-neutral-100'
+                                    : 'bg-neutral-850 text-neutral-400 hover:text-neutral-200'
+                            }`}
+                            title="Chat Mode"
+                        >
+                            Chat
+                        </button>
+                        <button
+                            onClick={() => handleModeChange('agent')}
+                            className={`px-2 py-1 text-xs ${
+                                agentMode === 'agent'
+                                    ? 'bg-orange-600 text-white'
+                                    : 'bg-neutral-850 text-neutral-400 hover:text-neutral-200'
+                            }`}
+                            title="Agent Mode"
+                        >
+                            Agent
+                        </button>
+                    </div>
                     <button
                         onClick={handleClearChat}
                         disabled={messages.length === 0 && !isStreaming}
@@ -255,6 +637,177 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
             {contextInfo && (
                 <div className="px-3 py-2 text-xs text-neutral-400 bg-neutral-850 border-b border-neutral-800">
                     <span className="font-medium">Context:</span> <span className="truncate inline-block max-w-[90%]">{contextInfo}</span>
+                </div>
+            )}
+
+            {agentMode === 'agent' && (
+                <div className="px-3 py-3 text-xs text-neutral-300 bg-neutral-900 border-b border-neutral-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <div className="text-orange-400 font-semibold tracking-wide">
+                            AUTONOMOUS MODE
+                        </div>
+                        {permissionsApproved && (
+                            <button
+                                onClick={handleRevokePermissions}
+                                className="text-xs text-neutral-400 hover:text-neutral-200"
+                            >
+                                Revoke Permissions
+                            </button>
+                        )}
+                    </div>
+
+                    {agentTask && (
+                        <div className="text-xs text-neutral-300">
+                            <span className="font-medium">Task:</span> {agentTask}
+                        </div>
+                    )}
+
+                    {agentStage === 'idle' && (
+                        <div className="text-xs text-neutral-400">
+                            Describe a task to begin. The agent will plan before touching code.
+                        </div>
+                    )}
+
+                    {agentStage === 'awaiting_permissions' && (
+                        <div className="space-y-3">
+                            <div className="text-xs text-neutral-300">
+                                The agent requests task-scoped permissions.
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                {(['read', 'modify', 'create', 'delete'] as const).map((perm) => (
+                                    <label key={perm} className="flex items-center gap-2 text-xs">
+                                        <input
+                                            type="checkbox"
+                                            checked={agentPermissions[perm]}
+                                            onChange={() => handlePermissionToggle(perm)}
+                                            className="accent-orange-500"
+                                        />
+                                        <span className="capitalize">{perm}</span>
+                                    </label>
+                                ))}
+                            </div>
+                            <button
+                                onClick={handleApprovePermissions}
+                                disabled={!agentPermissions.read}
+                                className="px-3 py-1.5 text-xs rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Approve Permissions
+                            </button>
+                            <div className="text-[11px] text-neutral-500">
+                                Approval gate: the agent cannot plan or execute without explicit permission.
+                            </div>
+                        </div>
+                    )}
+
+                    {agentStage === 'planning' && (
+                        <div className="text-xs text-neutral-400">
+                            Building a step-by-step plan...
+                        </div>
+                    )}
+
+                    {agentStage === 'awaiting_plan_approval' && agentPlan && (
+                        <div className="space-y-3">
+                            <div className="text-xs text-neutral-300">
+                                <span className="font-medium">Plan summary:</span> {agentPlan.summary}
+                            </div>
+                            <div className="space-y-2">
+                                {agentPlan.steps.map((step, index) => (
+                                    <div key={step.id} className="border border-neutral-800 rounded p-2">
+                                        <div className="text-xs text-neutral-200 font-medium">
+                                            Step {index + 1}: {step.title}
+                                        </div>
+                                        <div className="text-[11px] text-neutral-400 mt-1">
+                                            {step.description}
+                                        </div>
+                                        <div className="text-[11px] text-neutral-500 mt-2">
+                                            Files to modify: {step.filesToModify.join(', ') || 'none'}
+                                        </div>
+                                        <div className="text-[11px] text-neutral-500 mt-1">
+                                            Files to create: {step.filesToCreate.join(', ') || 'none'}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleApprovePlan}
+                                    className="px-3 py-1.5 text-xs rounded bg-green-600 text-white hover:bg-green-700"
+                                >
+                                    Approve Plan
+                                </button>
+                                <button
+                                    onClick={handleRejectPlan}
+                                    className="px-3 py-1.5 text-xs rounded bg-neutral-700 text-neutral-200 hover:bg-neutral-600"
+                                >
+                                    Reject Plan
+                                </button>
+                            </div>
+                            <div className="text-[11px] text-neutral-500">
+                                Approval gate: execution starts only after you approve the plan.
+                            </div>
+                        </div>
+                    )}
+
+                    {agentStage === 'executing' && agentPlan && (
+                        <div className="text-xs text-neutral-400">
+                            Preparing step {agentCurrentStepIndex + 1} of {agentPlan.steps.length}...
+                        </div>
+                    )}
+
+                    {agentStage === 'awaiting_step_approval' && agentStepResult && (
+                        <div className="space-y-3">
+                            <div className="text-xs text-neutral-300">
+                                <span className="font-medium">Step result:</span> {agentStepResult.summary}
+                            </div>
+                            <AgentDiffViewer
+                                changes={agentStepResult.changes}
+                                originalContentByPath={originalContentByPath}
+                            />
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleApproveStep}
+                                    className="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+                                >
+                                    Apply Step
+                                </button>
+                                <button
+                                    onClick={handleStopExecution}
+                                    className="px-3 py-1.5 text-xs rounded bg-neutral-700 text-neutral-200 hover:bg-neutral-600"
+                                >
+                                    Stop
+                                </button>
+                            </div>
+                            <div className="text-[11px] text-neutral-500">
+                                Approval gate: changes apply only after this review.
+                            </div>
+                        </div>
+                    )}
+
+                    {agentStage === 'completed' && (
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs text-neutral-400">Agent task completed.</span>
+                            <button
+                                onClick={resetAgentState}
+                                className="text-xs text-neutral-300 hover:text-white"
+                            >
+                                New Task
+                            </button>
+                        </div>
+                    )}
+
+                    {agentStage === 'error' && (
+                        <div className="space-y-2">
+                            <div className="text-xs text-red-400">
+                                {agentError || 'Agent encountered an error.'}
+                            </div>
+                            <button
+                                onClick={resetAgentState}
+                                className="text-xs text-neutral-300 hover:text-white"
+                            >
+                                Reset Agent
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -296,16 +849,18 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
             </div>
 
             {/* Template selector */}
-            <PromptTemplateSelector
-                onSelectTemplate={handleTemplateSelect}
-                disabled={isStreaming}
-            />
+            {agentMode === 'chat' && (
+                <PromptTemplateSelector
+                    onSelectTemplate={handleTemplateSelect}
+                    disabled={isStreaming}
+                />
+            )}
 
             {/* Input */}
             <ChatInput
-                onSend={handleSendMessage}
-                disabled={isStreaming}
-                placeholder={isStreaming ? 'AI is responding...' : 'Ask about your code...'}
+                onSend={handleInputSend}
+                disabled={isStreaming || isAgentBusy}
+                placeholder={inputPlaceholder}
             />
         </div>
     );

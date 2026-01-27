@@ -8,6 +8,13 @@
 
 import React, { createContext, useContext, useState, useCallback, useMemo, useRef } from 'react';
 import { ChatMessage } from '@/lib/ai/types';
+import type {
+    AgentMode,
+    AgentStage,
+    AgentPlan,
+    AgentStepResult,
+    AgentPermissionState,
+} from '@/lib/ai/agent/types';
 
 interface AIChatStateContextType {
     // Messages
@@ -31,6 +38,27 @@ interface AIChatStateContextType {
     // Context state (what code is being discussed)
     contextInfo: string | null;
     setContextInfo: (info: string | null) => void;
+
+    // Agent mode state
+    agentMode: AgentMode;
+    setAgentMode: (mode: AgentMode) => void;
+    agentStage: AgentStage;
+    setAgentStage: (stage: AgentStage) => void;
+    agentTask: string | null;
+    setAgentTask: (task: string | null) => void;
+    agentPlan: AgentPlan | null;
+    setAgentPlan: (plan: AgentPlan | null) => void;
+    agentStepResult: AgentStepResult | null;
+    setAgentStepResult: (result: AgentStepResult | null) => void;
+    agentCurrentStepIndex: number;
+    setAgentCurrentStepIndex: (index: number) => void;
+    agentPermissions: AgentPermissionState;
+    setAgentPermissions: (next: AgentPermissionState) => void;
+    permissionsApproved: boolean;
+    setPermissionsApproved: (approved: boolean) => void;
+    agentError: string | null;
+    setAgentError: (error: string | null) => void;
+    resetAgentState: () => void;
 }
 
 const AIChatStateContext = createContext<AIChatStateContextType | undefined>(undefined);
@@ -51,6 +79,22 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
     
     // Context info (e.g., "index.tsx, lines 10-25")
     const [contextInfo, setContextInfo] = useState<string | null>(null);
+
+    // Agent mode state
+    const [agentMode, setAgentMode] = useState<AgentMode>('chat');
+    const [agentStage, setAgentStage] = useState<AgentStage>('idle');
+    const [agentTask, setAgentTask] = useState<string | null>(null);
+    const [agentPlan, setAgentPlan] = useState<AgentPlan | null>(null);
+    const [agentStepResult, setAgentStepResult] = useState<AgentStepResult | null>(null);
+    const [agentCurrentStepIndex, setAgentCurrentStepIndex] = useState(-1);
+    const [agentPermissions, setAgentPermissions] = useState<AgentPermissionState>({
+        read: true,
+        modify: true,
+        create: true,
+        delete: false,
+    });
+    const [permissionsApproved, setPermissionsApproved] = useState(false);
+    const [agentError, setAgentError] = useState<string | null>(null);
 
     // Message management
     const addMessage = useCallback((message: ChatMessage) => {
@@ -118,6 +162,22 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
         setIsPanelOpen(false);
     }, []);
 
+    const resetAgentState = useCallback(() => {
+        setAgentStage('idle');
+        setAgentTask(null);
+        setAgentPlan(null);
+        setAgentStepResult(null);
+        setAgentCurrentStepIndex(-1);
+        setAgentPermissions({
+            read: true,
+            modify: true,
+            create: true,
+            delete: false,
+        });
+        setPermissionsApproved(false);
+        setAgentError(null);
+    }, []);
+
     const value = useMemo(
         () => ({
             messages,
@@ -134,6 +194,25 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
             closePanel,
             contextInfo,
             setContextInfo,
+            agentMode,
+            setAgentMode,
+            agentStage,
+            setAgentStage,
+            agentTask,
+            setAgentTask,
+            agentPlan,
+            setAgentPlan,
+            agentStepResult,
+            setAgentStepResult,
+            agentCurrentStepIndex,
+            setAgentCurrentStepIndex,
+            agentPermissions,
+            setAgentPermissions,
+            permissionsApproved,
+            setPermissionsApproved,
+            agentError,
+            setAgentError,
+            resetAgentState,
         }),
         [
             messages,
@@ -149,6 +228,16 @@ export function AIChatStateProvider({ children }: { children: React.ReactNode })
             openPanel,
             closePanel,
             contextInfo,
+            agentMode,
+            agentStage,
+            agentTask,
+            agentPlan,
+            agentStepResult,
+            agentCurrentStepIndex,
+            agentPermissions,
+            permissionsApproved,
+            agentError,
+            resetAgentState,
         ]
     );
 

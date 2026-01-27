@@ -1,172 +1,141 @@
-# PHASE 2.5 – Multi-Workspace Management Execution Prompt
+# PHASE 3A – Agent Mode Execution Prompt (Core Intelligence)
 
-You are a **senior full-stack engineer** implementing **PHASE 2.5: Multi-Workspace Management** for a **Next.js (App Router) web-based code editor**.
+You are a **senior AI + platform engineer** implementing **Agent Mode** for a **Next.js (App Router) web-based code editor**.
 
-Previous phases already implemented:
-- Authentication (Clerk)
-- Workspace persistence & sync
-- Inline AI & GitHub foundations
+Previous phases completed:
+- Inline AI (Gemini)
+- GitHub foundations
+- Workspace management
+- Persistence & sync
 
-This phase introduces **multiple workspaces as a first-class concept**.
+This phase introduces **Agent Mode as a controlled, transparent system**.
+
+You must prioritize:
+- Safety
+- Explainability
+- Human control
 
 ---
 
 ## 🎯 PHASE GOAL
 
-Enable authenticated users to:
-- Create, rename, delete multiple workspaces
-- Switch between workspaces safely
-- Work with both Cloud and GitHub-linked workspaces
-- Ensure all editor, AI, and Git operations are scoped to the active workspace
+Enable users to switch from **Chat Mode** to **Agent Mode**, where an AI agent can:
+- Analyze the entire workspace or repository
+- Propose a step-by-step execution plan
+- Perform multi-file changes incrementally
+- Pause for human approval at key checkpoints
 
-This phase must **not introduce collaboration, billing UI, or agent logic**.
-
----
-
-## 🧱 SCOPE (ONLY THIS PHASE)
+This phase must **not perform GitHub operations yet**.
 
 ---
 
-## 1️⃣ Workspace Lifecycle Management
-
-### Required Operations
-Implement backend + frontend support for:
-- Create workspace
-- Rename workspace
-- Delete workspace (hard delete)
-- Switch active workspace
-
-### Rules
-- Each workspace must have:
-  - `workspaceId` (UUID)
-  - `name`
-  - `type` (`cloud` | `github`)
-  - `createdAt`
-  - `lastOpenedAt`
-- Deleting a workspace permanently removes all associated data
-- No undo or archive behavior
+## 🧱 SCOPE (ONLY THIS PROMPT)
 
 ---
 
-## 2️⃣ Workspace Types
+## 1️⃣ Agent Mode UX
 
-### Supported Types
-- **Cloud Workspace**
-  - Source of truth: application backend
-- **GitHub-Linked Workspace**
-  - Source of truth: GitHub repository
-  - Local changes tracked separately
+### Requirements
+- Toggle between:
+  - Chat Mode
+  - Agent Mode
+- Agent Mode must:
+  - Clearly indicate “AUTONOMOUS MODE”
+  - Display agent reasoning & plan
 
-### Constraints
-- Workspace type is:
-  - Explicit at creation time
-  - Immutable after creation
-- GitHub workspaces must reference:
-  - Repository
-  - Branch
+### UI Rules
+- Agent actions are verbose
+- No hidden steps
+- User always sees:
+  - What the agent plans to do
+  - Which files are affected
 
 ---
 
-## 3️⃣ Active Workspace Semantics (CRITICAL)
-
-### Rules
-- Only **one workspace can be active at a time**
-- All operations must be scoped to:
-  - Active workspace ID
-- Active workspace ID must be:
-  - Stored server-side
-  - Available in Server Actions and Hono APIs
+## 2️⃣ Agent Planning Phase (CRITICAL)
 
 ### Behavior
-- Switching workspace:
-  - Persists current workspace state
-  - Loads selected workspace state
-- No page reload required
-
----
-
-## 4️⃣ Workspace Selector UI
-
-### Scope
-Implement a **minimal workspace selector** in the editor shell.
-
-### UI Requirements
-- Show:
-  - Workspace name
-  - Workspace type (Cloud / GitHub)
-  - Last opened timestamp
-- Allow:
-  - Switching workspaces
-  - Creating a new workspace
-  - Deleting current workspace
-
-### Constraints
-- Minimal UI
-- No search
-- No drag-and-drop
-- No reordering
-
----
-
-## 5️⃣ Backend APIs (Hono)
-
-### Required APIs
-Implement workspace APIs via **Hono**:
-- `GET /workspaces`
-- `POST /workspaces`
-- `PATCH /workspaces/:id`
-- `DELETE /workspaces/:id`
-- `POST /workspaces/:id/activate`
+Before making any changes, the agent must:
+1. Analyze the workspace
+2. Generate a **step-by-step execution plan**
+3. List:
+   - Files to read
+   - Files to modify
+   - New files to create (if any)
 
 ### Rules
-- All APIs must:
-  - Require authentication (Clerk)
-  - Enforce workspace ownership
-- Workspace ID must always be validated against `userId`
+- Plan must be shown to user
+- User must explicitly approve the plan
+- No execution before approval
 
 ---
 
-## 6️⃣ State Management & Integration
+## 3️⃣ Agent Permissions Model
 
-### Frontend
-- Workspace context must expose:
-  - Workspace list
-  - Active workspace
-  - Switch/create/delete handlers
+### Permission Levels
+Agent must request permissions **per task**:
+- Read files
+- Modify working tree
+- Create new files
+- Delete files
 
-### Editor Integration Rules
-- Editor components must:
-  - Consume workspace context
-  - Never call workspace APIs directly
-- Editor logic must not care how many workspaces exist
+### Rules
+- Permissions are:
+  - Task-scoped
+  - Explicit
+  - Revocable
+- No global agent permissions
 
 ---
 
-## 7️⃣ Limits & Future Billing Hooks
+## 4️⃣ Multi-file Execution Engine
 
-### Scope (Infrastructure Only)
-- Enforce:
-  - Maximum workspaces per user
-- Enforcement:
-  - Server-side only
-  - Silent (no UI)
+### Behavior
+Once approved:
+- Agent executes changes **incrementally**
+- After each step:
+  - Show diff
+  - Allow user to approve or stop
 
-### Notes
-- No billing UI
-- No plan selection
-- No upgrade prompts
+### Rules
+- No silent changes
+- No batch auto-apply without review
+- All changes are reversible
+
+---
+
+## 5️⃣ Diff & Review System
+
+### Requirements
+- Full diff view per step
+- File-by-file breakdown
+- Clear before/after comparison
+
+### Constraints
+- No auto-save during agent execution
+- Changes are staged in-memory until approved
+
+---
+
+## 6️⃣ Execution Model
+
+### Technical Notes
+- Agent reasoning uses **Gemini**
+- Execution is:
+  - Synchronous
+  - User-driven
+- No background jobs yet (Inngest later)
 
 ---
 
 ## 🚫 OUT OF SCOPE (DO NOT IMPLEMENT)
 
-- Workspace sharing
-- Team workspaces
-- Workspace templates
-- Workspace cloning
-- Archiving / soft delete
-- Billing UI or Stripe integration
-- Collaboration or presence
+- GitHub commits
+- Branch creation
+- Pull requests
+- Background execution
+- Retry logic
+- Autonomous loops
 
 ---
 
@@ -174,32 +143,29 @@ Implement workspace APIs via **Hono**:
 
 - TypeScript strict
 - No `any`
-- Clear data models:
-  - Workspace
-  - WorkspaceMetadata
-- Explicit comments explaining:
-  - Active workspace semantics
-  - Source-of-truth rules
-- No duplicated workspace logic
+- Clear separation:
+  - Agent planner
+  - Agent executor
+  - Diff renderer
+- Comments explaining:
+  - Why each approval step exists
 
 ---
 
 ## ✅ EXPECTED OUTPUT
 
 At the end of this phase:
-1. Users can manage multiple workspaces
-2. Workspace switching is seamless and safe
-3. Active workspace is always explicit
-4. Cloud and GitHub workspaces behave correctly
-5. Editor, AI, and Git operations are workspace-scoped
-6. Foundation is ready for billing, teams, and agent mode
+1. Users can toggle Agent Mode
+2. Agent produces transparent execution plans
+3. Multi-file changes are previewed safely
+4. Users approve every step
+5. No GitHub operations occur
 
 ---
 
 ## 🧠 FINAL INSTRUCTION
 
-This phase defines **how users organize their work**.
+Agent Mode must feel like:
+> “A junior engineer explaining every move before touching code.”
 
-Do not add collaboration, billing, or automation.
-
-If something feels useful later, **leave a comment and stop**.
+Do not optimize for speed. Optimize for trust.
