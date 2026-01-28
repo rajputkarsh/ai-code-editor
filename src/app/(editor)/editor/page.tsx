@@ -24,6 +24,7 @@ import { PromptTemplate } from '@/lib/ai/prompt-templates';
 import { ChatContext } from '@/lib/ai/types';
 import { detectLanguage } from '@/lib/file-utils';
 import { useEditorStatePersistence } from '../stores/editor-persistence';
+import { TerminalPanel } from '../components/terminal/TerminalPanel';
 
 const EditorArea = () => {
     const { activeTabId, activeSecondaryTabId, isSplit, tabs, activePaneForFileOpen, setActivePaneForFileOpen } = useEditorState();
@@ -136,6 +137,7 @@ export default function EditorPage() {
     // Panel visibility state (single source of truth)
     const [isFileExplorerOpen, setIsFileExplorerOpen] = useState(true);
     const [isAIChatOpen, setIsAIChatOpen] = useState(false);
+    const [isTerminalOpen, setIsTerminalOpen] = useState(false);
     const [isPromptHistoryOpen, setIsPromptHistoryOpen] = useState(false);
     const [isGitHubImportOpen, setIsGitHubImportOpen] = useState(false);
     const [isImportingRepo, setIsImportingRepo] = useState(false);
@@ -625,14 +627,19 @@ export default function EditorPage() {
                         <EditorToolbar
                             isFileExplorerOpen={isFileExplorerOpen}
                             isAIChatOpen={isAIChatOpen}
+                            isTerminalOpen={isTerminalOpen}
                             onFileExplorerToggle={() => setIsFileExplorerOpen(!isFileExplorerOpen)}
                             onAIChatToggle={() => setIsAIChatOpen(!isAIChatOpen)}
+                            onTerminalToggle={() => setIsTerminalOpen(!isTerminalOpen)}
                             onCodeActionsClick={() => setIsCodeActionMenuOpen(true)}
                             onPromptHistoryClick={() => setIsPromptHistoryOpen(true)}
                             onExplainClick={handleExplainCode}
                             onGitHubClick={() => setIsGitHubImportOpen(true)}
                         />
                         <EditorArea />
+                        {isTerminalOpen && (
+                            <TerminalPanel onClose={() => setIsTerminalOpen(false)} />
+                        )}
                         {/* VS Code-style Bottom Bar */}
                         <EditorBottomBar />
                     </div>

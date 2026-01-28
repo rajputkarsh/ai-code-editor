@@ -11,14 +11,16 @@
  */
 
 import React from 'react';
-import { PanelLeft, MessageSquare, Wand2, Clock, FileText, Github } from 'lucide-react';
+import { PanelLeft, MessageSquare, Wand2, Clock, FileText, Github, Terminal } from 'lucide-react';
 import { WorkspaceSelector } from './WorkspaceSelector';
 
 interface EditorToolbarProps {
     isFileExplorerOpen: boolean;
     isAIChatOpen: boolean;
+    isTerminalOpen: boolean;
     onFileExplorerToggle: () => void;
     onAIChatToggle: () => void;
+    onTerminalToggle: () => void;
     onCodeActionsClick?: () => void;
     onPromptHistoryClick?: () => void;
     onExplainClick?: () => void;
@@ -28,8 +30,10 @@ interface EditorToolbarProps {
 export function EditorToolbar({
     isFileExplorerOpen,
     isAIChatOpen,
+    isTerminalOpen,
     onFileExplorerToggle,
     onAIChatToggle,
+    onTerminalToggle,
     onCodeActionsClick,
     onPromptHistoryClick,
     onExplainClick,
@@ -99,6 +103,16 @@ export function EditorToolbar({
                     aria-label={isAIChatOpen ? 'Hide AI assistant' : 'Show AI assistant'}
                 >
                     <MessageSquare className="w-3 h-3" />
+                </button>
+
+                {/* Terminal Toggle */}
+                <button
+                    onClick={onTerminalToggle}
+                    className={`p-1 rounded-md transition-colors ${isTerminalOpen ? 'bg-emerald-600 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+                    title={isTerminalOpen ? 'Hide terminal' : 'Show terminal'}
+                    aria-label={isTerminalOpen ? 'Hide terminal' : 'Show terminal'}
+                >
+                    <Terminal className="w-3 h-3" />
                 </button>
             </div>
         </div>
