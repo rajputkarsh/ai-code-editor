@@ -18,6 +18,7 @@
     "@hono/zod-validator": "^0.4.1",
     "@monaco-editor/react": "^4.7.0",
     "@neondatabase/serverless": "^0.10.4",
+    "@webcontainer/api": "^1.6.1",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.11.5",
     "jszip": "^3.10.1",
