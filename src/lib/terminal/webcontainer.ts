@@ -11,13 +11,14 @@
  * - Kill process on timeout or user abort.
  */
 
-import { WebContainer, type FileSystemTree, type WebContainerProcess } from '@webcontainer/api';
+import { WebContainer, type WebContainerProcess } from '@webcontainer/api';
 import type { VFSNode, VFSStructure } from '@/lib/workspace/types';
 import type { TerminalStreamEvent } from './types';
 
 const MAX_EXECUTION_MS = 30_000;
 const MAX_DEV_SERVER_MS = 20_000;
 const DISALLOWED_SHELL_PATTERN = /[;&|`$<>]/;
+const WORKSPACE_DIR = '/workspace';
 
 const ALLOWED_MANAGERS = ['npm', 'yarn', 'pnpm'] as const;
 type PackageManager = (typeof ALLOWED_MANAGERS)[number];
@@ -27,6 +28,7 @@ type ParsedCommand =
     | { manager: PackageManager; action: 'run'; scriptName: string; raw: string };
 
 let containerPromise: Promise<WebContainer> | null = null;
+let lastSyncedFiles = new Set<string>();
 
 function getNodePath(nodes: Record<string, VFSNode>, rootId: string, id: string): string {
     const parts: string[] = [];
@@ -44,51 +46,77 @@ function getNodePath(nodes: Record<string, VFSNode>, rootId: string, id: string)
     return `/${parts.join('/')}`;
 }
 
-function buildFileSystemTree(vfs: VFSStructure): FileSystemTree {
-    const tree: FileSystemTree = {};
+function collectWorkspaceEntries(vfs: VFSStructure): {
+    files: Map<string, string>;
+    directories: Set<string>;
+} {
+    const files = new Map<string, string>();
+    const directories = new Set<string>();
     const nodes = vfs.nodes;
     const rootId = vfs.rootId;
 
-    const ensureDirectory = (parts: string[]) => {
-        let cursor: FileSystemTree = tree;
-        for (const part of parts) {
-            const existing = cursor[part];
-            if (!existing || !('directory' in existing)) {
-                cursor[part] = { directory: {} };
-            }
-            cursor = (cursor[part] as { directory: FileSystemTree }).directory;
-        }
-    };
+    directories.add(WORKSPACE_DIR);
 
     for (const node of Object.values(nodes)) {
         const fullPath = getNodePath(nodes, rootId, node.id);
-        const parts = fullPath.split('/').filter(Boolean);
-        if (parts.length === 0) continue;
+        if (fullPath === '/') continue;
 
+        const targetPath = `${WORKSPACE_DIR}${fullPath}`;
         if (node.type === 'folder') {
-            ensureDirectory(parts);
+            directories.add(targetPath);
             continue;
         }
 
-        const fileParts = parts.slice(0, -1);
-        if (fileParts.length) {
-            ensureDirectory(fileParts);
+        const parts = targetPath.split('/').filter(Boolean);
+        if (parts.length > 1) {
+            const dirPath = `/${parts.slice(0, -1).join('/')}`;
+            directories.add(dirPath);
         }
 
-        let cursor: FileSystemTree = tree;
-        for (const part of fileParts) {
-            cursor = (cursor[part] as { directory: FileSystemTree }).directory;
-        }
-
-        const fileName = parts[parts.length - 1];
-        cursor[fileName] = {
-            file: {
-                contents: node.content ?? '',
-            },
-        };
+        files.set(targetPath, node.content ?? '');
     }
 
-    return tree;
+    return { files, directories };
+}
+
+async function ensureDirectory(container: WebContainer, path: string): Promise<void> {
+    try {
+        await container.fs.mkdir(path, { recursive: true });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        if (!message.includes('EEXIST')) {
+            throw error;
+        }
+    }
+}
+
+async function syncWorkspace(container: WebContainer, vfs: VFSStructure): Promise<void> {
+    const { files, directories } = collectWorkspaceEntries(vfs);
+
+    for (const dir of directories) {
+        await ensureDirectory(container, dir);
+    }
+
+    for (const [filePath, contents] of files) {
+        await container.fs.writeFile(filePath, contents);
+    }
+
+    for (const previousPath of lastSyncedFiles) {
+        if (!files.has(previousPath)) {
+            await container.fs.rm(previousPath, { force: true });
+        }
+    }
+
+    lastSyncedFiles = new Set(files.keys());
+}
+
+async function dependenciesInstalled(container: WebContainer): Promise<boolean> {
+    try {
+        await container.fs.readdir(`${WORKSPACE_DIR}/node_modules`);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 async function getWebContainer(): Promise<WebContainer> {
@@ -236,8 +264,8 @@ export async function runTerminalCommand(options: {
     const container = await getWebContainer();
 
     onEvent({ type: 'status', text: 'Booting sandboxed environment...' });
-    await container.mount(buildFileSystemTree(vfs));
-    onEvent({ type: 'status', text: 'Workspace mounted in sandbox.' });
+    await syncWorkspace(container, vfs);
+    onEvent({ type: 'status', text: 'Workspace synced in sandbox.' });
 
     const managerReady = await ensurePackageManager(parsed.manager, container);
     if (!managerReady.ok) {
@@ -249,8 +277,20 @@ export async function runTerminalCommand(options: {
         return;
     }
 
+    if (parsed.action === 'run') {
+        const hasDependencies = await dependenciesInstalled(container);
+        if (!hasDependencies) {
+            onEvent({
+                type: 'error',
+                text: 'Dependencies are not installed in the sandbox. Run npm install (or yarn/pnpm) first.',
+            });
+            onExit({ type: 'exit', exitCode: 1, durationMs: Date.now() - startedAt });
+            return;
+        }
+    }
+
     const { command: spawnCommand, args } = getSpawnArgs(parsed);
-    const process = await container.spawn(spawnCommand, args, { cwd: '/' });
+    const process = await container.spawn(spawnCommand, args, { cwd: WORKSPACE_DIR });
 
     const devScript = isDevScript(parsed);
     const timeoutMs = devScript ? MAX_DEV_SERVER_MS : MAX_EXECUTION_MS;
