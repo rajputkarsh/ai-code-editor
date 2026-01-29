@@ -7,7 +7,7 @@
  * - Command allowlist + no shell operators.
  *
  * Execution limits:
- * - Hard timeout (10s).
+ * - Hard timeout (30s, dev servers 20s).
  * - Kill process on timeout or user abort.
  */
 
@@ -15,7 +15,8 @@ import { WebContainer, type FileSystemTree, type WebContainerProcess } from '@we
 import type { VFSNode, VFSStructure } from '@/lib/workspace/types';
 import type { TerminalStreamEvent } from './types';
 
-const MAX_EXECUTION_MS = 10_000;
+const MAX_EXECUTION_MS = 30_000;
+const MAX_DEV_SERVER_MS = 20_000;
 const DISALLOWED_SHELL_PATTERN = /[;&|`$<>]/;
 
 const ALLOWED_MANAGERS = ['npm', 'yarn', 'pnpm'] as const;
@@ -32,7 +33,7 @@ function getNodePath(nodes: Record<string, VFSNode>, rootId: string, id: string)
     let currentId: string | null = id;
 
     while (currentId) {
-        const node = nodes[currentId];
+        const node: VFSNode | undefined = nodes[currentId];
         if (!node) break;
         if (currentId !== rootId) {
             parts.unshift(node.name);
@@ -181,6 +182,10 @@ function getSpawnArgs(parsed: ParsedCommand): { command: string; args: string[] 
     return { command: parsed.manager, args: ['run', parsed.scriptName] };
 }
 
+function isDevScript(parsed: ParsedCommand): boolean {
+    return parsed.action === 'run' && (parsed.scriptName === 'dev' || parsed.scriptName === 'start');
+}
+
 async function streamProcessOutput(
     process: WebContainerProcess,
     onEvent: (event: TerminalStreamEvent) => void
@@ -188,8 +193,8 @@ async function streamProcessOutput(
     const decoder = new TextDecoder();
     await process.output.pipeTo(
         new WritableStream({
-            write(chunk) {
-                const text = decoder.decode(chunk);
+            write(chunk: Uint8Array | string) {
+                const text = typeof chunk === 'string' ? chunk : decoder.decode(chunk);
                 if (text) {
                     onEvent({ type: 'output', text });
                 }
@@ -247,7 +252,10 @@ export async function runTerminalCommand(options: {
     const { command: spawnCommand, args } = getSpawnArgs(parsed);
     const process = await container.spawn(spawnCommand, args, { cwd: '/' });
 
+    const devScript = isDevScript(parsed);
+    const timeoutMs = devScript ? MAX_DEV_SERVER_MS : MAX_EXECUTION_MS;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let timedOut = false;
     const handleAbort = () => {
         process.kill();
         onEvent({ type: 'error', text: 'Execution cancelled by user.' });
@@ -259,13 +267,21 @@ export async function runTerminalCommand(options: {
 
     const timeoutPromise = new Promise<void>((resolve) => {
         timeoutId = setTimeout(() => {
+            timedOut = true;
             process.kill();
-            onEvent({
-                type: 'error',
-                text: `Execution timed out after ${MAX_EXECUTION_MS / 1000}s.`,
-            });
+            onEvent(
+                devScript
+                    ? {
+                          type: 'status',
+                          text: `Dev server stopped by policy after ${timeoutMs / 1000}s.`,
+                      }
+                    : {
+                          type: 'error',
+                          text: `Execution timed out after ${timeoutMs / 1000}s.`,
+                      }
+            );
             resolve();
-        }, MAX_EXECUTION_MS);
+        }, timeoutMs);
     });
 
     const outputPromise = streamProcessOutput(process, onEvent);
@@ -284,7 +300,7 @@ export async function runTerminalCommand(options: {
     const durationMs = Date.now() - startedAt;
     onExit({
         type: 'exit',
-        exitCode: typeof exitCode === 'number' ? exitCode : 1,
+        exitCode: typeof exitCode === 'number' ? exitCode : timedOut ? 124 : 1,
         durationMs,
     });
 }
