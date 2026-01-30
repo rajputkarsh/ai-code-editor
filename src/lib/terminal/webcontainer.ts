@@ -349,18 +349,6 @@ export async function runTerminalCommand(options: {
         return;
     }
 
-    if (parsed.action === 'run') {
-        const hasDependencies = await dependenciesInstalled(container);
-        if (!hasDependencies) {
-            onEvent({
-                type: 'error',
-                text: 'Dependencies are not installed in the sandbox. Run npm install (or yarn/pnpm) first.',
-            });
-            onExit({ type: 'exit', exitCode: 1, durationMs: Date.now() - startedAt });
-            return;
-        }
-    }
-
     const devScript = isDevScript(parsed);
     const timeoutMs = devScript ? MAX_DEV_SERVER_MS : MAX_EXECUTION_MS;
 
