@@ -136,6 +136,57 @@ async function dependenciesInstalled(container: WebContainer): Promise<boolean> 
     }
 }
 
+async function runProcessWithStreaming(options: {
+    container: WebContainer;
+    command: string;
+    args: string[];
+    cwd: string;
+    onEvent: (event: TerminalStreamEvent) => void;
+    signal?: AbortSignal;
+    timeoutMs: number;
+}): Promise<{ exitCode: number; timedOut: boolean }> {
+    const { container, command, args, cwd, onEvent, signal, timeoutMs } = options;
+    const process = await container.spawn(command, args, { cwd });
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let timedOut = false;
+
+    const handleAbort = () => {
+        process.kill();
+        onEvent({ type: 'error', text: 'Execution cancelled by user.' });
+    };
+
+    if (signal) {
+        signal.addEventListener('abort', handleAbort, { once: true });
+    }
+
+    const timeoutPromise = new Promise<void>((resolve) => {
+        timeoutId = setTimeout(() => {
+            timedOut = true;
+            process.kill();
+            onEvent({
+                type: 'error',
+                text: `Execution timed out after ${timeoutMs / 1000}s.`,
+            });
+            resolve();
+        }, timeoutMs);
+    });
+
+    const outputPromise = streamProcessOutput(process, onEvent);
+    const exitCode = await Promise.race([process.exit, timeoutPromise.then(() => 124)]);
+
+    if (timeoutId) clearTimeout(timeoutId);
+    if (signal) {
+        signal.removeEventListener('abort', handleAbort);
+    }
+
+    await outputPromise;
+
+    return {
+        exitCode: typeof exitCode === 'number' ? exitCode : 1,
+        timedOut,
+    };
+}
+
 async function getWebContainer(): Promise<WebContainer> {
     const state = getContainerState();
     if (!state.promise) {
@@ -310,58 +361,60 @@ export async function runTerminalCommand(options: {
         }
     }
 
-    const { command: spawnCommand, args } = getSpawnArgs(parsed);
-    const process = await container.spawn(spawnCommand, args, { cwd: WORKSPACE_DIR });
-
     const devScript = isDevScript(parsed);
     const timeoutMs = devScript ? MAX_DEV_SERVER_MS : MAX_EXECUTION_MS;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    let timedOut = false;
-    const handleAbort = () => {
-        process.kill();
-        onEvent({ type: 'error', text: 'Execution cancelled by user.' });
-    };
 
-    if (signal) {
-        signal.addEventListener('abort', handleAbort, { once: true });
+    if (parsed.action === 'run') {
+        const hasDependencies = await dependenciesInstalled(container);
+        if (!hasDependencies) {
+            onEvent({
+                type: 'status',
+                text: 'Dependencies missing. Installing in sandbox before running the script...',
+            });
+            const installResult = await runProcessWithStreaming({
+                container,
+                command: parsed.manager,
+                args: ['install'],
+                cwd: WORKSPACE_DIR,
+                onEvent,
+                signal,
+                timeoutMs: MAX_EXECUTION_MS,
+            });
+            if (installResult.exitCode !== 0) {
+                onExit({
+                    type: 'exit',
+                    exitCode: installResult.exitCode,
+                    durationMs: Date.now() - startedAt,
+                });
+                return;
+            }
+        }
     }
 
-    const timeoutPromise = new Promise<void>((resolve) => {
-        timeoutId = setTimeout(() => {
-            timedOut = true;
-            process.kill();
-            onEvent(
-                devScript
-                    ? {
-                          type: 'status',
-                          text: `Dev server stopped by policy after ${timeoutMs / 1000}s.`,
-                      }
-                    : {
-                          type: 'error',
-                          text: `Execution timed out after ${timeoutMs / 1000}s.`,
-                      }
-            );
-            resolve();
-        }, timeoutMs);
+    const { command: spawnCommand, args } = getSpawnArgs(parsed);
+    const result = await runProcessWithStreaming({
+        container,
+        command: spawnCommand,
+        args,
+        cwd: WORKSPACE_DIR,
+        onEvent: (event) => {
+            if (devScript && event.type === 'error' && event.text.startsWith('Execution timed out')) {
+                onEvent({
+                    type: 'status',
+                    text: `Dev server stopped by policy after ${timeoutMs / 1000}s.`,
+                });
+                return;
+            }
+            onEvent(event);
+        },
+        signal,
+        timeoutMs,
     });
-
-    const outputPromise = streamProcessOutput(process, onEvent);
-    const exitCode = await Promise.race([
-        process.exit,
-        timeoutPromise.then(() => 124),
-    ]);
-
-    if (timeoutId) clearTimeout(timeoutId);
-    if (signal) {
-        signal.removeEventListener('abort', handleAbort);
-    }
-
-    await outputPromise;
 
     const durationMs = Date.now() - startedAt;
     onExit({
         type: 'exit',
-        exitCode: typeof exitCode === 'number' ? exitCode : timedOut ? 124 : 1,
+        exitCode: result.exitCode,
         durationMs,
     });
 }
