@@ -641,6 +641,130 @@ Enable **full-stack development inside the browser**.
 
 ---
 
+# PHASE 2.8: Live Preview Inside the Editor
+
+### Goal
+Enable developers to **see real-time output of their code** directly inside the editor, creating a tight **edit → preview → iterate** loop without leaving the application.
+
+This phase focuses on **developer feedback**, not production deployment.
+
+---
+
+## 4.5 Live Preview Capabilities
+
+### Scope
+- Render application output inside the editor UI
+- Preview updates automatically when code changes
+- Support common frontend project types
+
+### Supported Preview Types (Initial)
+- Static HTML / CSS / JS
+- React-based frontend apps (client-side only)
+- Basic framework dev servers (Next.js / Vite) via sandboxed execution
+
+---
+
+## 4.5.2 Preview Architecture
+
+### Rendering Strategy
+- Preview runs in an **isolated iframe**
+- No direct DOM access between editor and preview
+- Clear boundary between:
+  - Editor runtime
+  - Preview runtime
+
+### Source of Truth
+- Preview always reflects the **active workspace**
+- Unsaved changes must be previewed (optimistic)
+
+---
+
+## 4.5.3 Preview Controls
+
+### UI Controls
+- Toggle preview on/off
+- Refresh preview manually
+- Switch between:
+  - Code-only view
+  - Split view (editor + preview)
+
+### Behavior
+- Preview must never block editor interaction
+- Errors in preview must not crash the editor
+
+---
+
+## 4.5.4 Error Handling & Feedback
+
+### Scope
+- Capture runtime errors from preview
+- Display errors in:
+  - Preview panel
+  - Inline error overlay (read-only)
+
+### Constraints
+- Errors are descriptive, not prescriptive
+- No automatic code fixes in this phase
+
+---
+
+## 4.5.5 Security & Isolation
+
+### Rules
+- Preview execution must be sandboxed
+- No access to:
+  - User credentials
+  - Auth tokens
+  - Host environment
+- Network access restricted (initially)
+
+---
+
+## 4.5.6 Performance Constraints
+
+### Requirements
+- Fast startup time for preview
+- Debounced rebuilds on file change
+- No full reloads unless required
+
+---
+
+## 4.5.7 Integration Rules
+
+### Editor Integration
+- Preview consumes workspace state
+- Preview does NOT:
+  - Modify files
+  - Trigger AI actions
+  - Interact with GitHub directly
+
+### AI Interaction (Deferred)
+- AI may reference preview output in later phases
+- No AI-driven preview analysis in this phase
+
+---
+
+## 4.5.8 Non-Goals
+
+This phase explicitly does **not** include:
+- Production builds
+- Deployment or hosting
+- Server-side rendering previews
+- Mobile preview modes
+- Real device emulation
+- Collaborative preview sessions
+
+---
+
+## Phase Exit Criteria
+
+This phase is considered complete when:
+1. Users can see a live preview inside the editor
+2. Preview updates reliably on code changes
+3. Editor and preview remain isolated
+4. Errors are visible but non-intrusive
+5. Preview does not impact editor performance
+
 # PHASE 5: Collaboration & Team Workflows
 
 ### Goal
