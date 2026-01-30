@@ -641,7 +641,7 @@ Enable **full-stack development inside the browser**.
 
 ---
 
-# PHASE 2.8: Live Preview Inside the Editor
+# PHASE 4.5: Live Preview Inside the Editor
 
 ### Goal
 Enable developers to **see real-time output of their code** directly inside the editor, creating a tight **edit → preview → iterate** loop without leaving the application.
@@ -650,7 +650,7 @@ This phase focuses on **developer feedback**, not production deployment.
 
 ---
 
-## 4.5 Live Preview Capabilities
+## 4.5.1 Live Preview Capabilities
 
 ### Scope
 - Render application output inside the editor UI
