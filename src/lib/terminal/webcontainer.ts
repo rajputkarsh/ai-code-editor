@@ -17,6 +17,7 @@ import type { TerminalStreamEvent } from './types';
 
 const MAX_EXECUTION_MS = 30_000;
 const MAX_DEV_SERVER_MS = 20_000;
+const MAX_INSTALL_MS = 600_000;
 const DISALLOWED_SHELL_PATTERN = /[;&|`$<>]/;
 const WORKSPACE_DIR = '/workspace';
 
@@ -144,9 +145,10 @@ async function runProcessWithStreaming(options: {
     onEvent: (event: TerminalStreamEvent) => void;
     signal?: AbortSignal;
     timeoutMs: number;
+    env?: Record<string, string>;
 }): Promise<{ exitCode: number; timedOut: boolean }> {
-    const { container, command, args, cwd, onEvent, signal, timeoutMs } = options;
-    const process = await container.spawn(command, args, { cwd });
+    const { container, command, args, cwd, onEvent, signal, timeoutMs, env } = options;
+    const process = await container.spawn(command, args, { cwd, env });
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let timedOut = false;
 
@@ -291,12 +293,17 @@ async function streamProcessOutput(
     onEvent: (event: TerminalStreamEvent) => void
 ): Promise<void> {
     const decoder = new TextDecoder();
+    const sanitize = (value: string) =>
+        value
+            .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+            .replace(/\r/g, '');
     await process.output.pipeTo(
         new WritableStream({
             write(chunk: Uint8Array | string) {
                 const text = typeof chunk === 'string' ? chunk : decoder.decode(chunk);
-                if (text) {
-                    onEvent({ type: 'output', text });
+                const clean = sanitize(text);
+                if (clean) {
+                    onEvent({ type: 'output', text: clean });
                 }
             },
         })
@@ -366,7 +373,14 @@ export async function runTerminalCommand(options: {
                 cwd: WORKSPACE_DIR,
                 onEvent,
                 signal,
-                timeoutMs: MAX_EXECUTION_MS,
+                timeoutMs: MAX_INSTALL_MS,
+                env: {
+                    TERM: 'dumb',
+                    npm_config_progress: 'false',
+                    npm_config_audit: 'false',
+                    npm_config_fund: 'false',
+                    npm_config_update_notifier: 'false',
+                },
             });
             if (installResult.exitCode !== 0) {
                 onExit({
