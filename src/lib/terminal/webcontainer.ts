@@ -27,8 +27,24 @@ type ParsedCommand =
     | { manager: PackageManager; action: 'install'; raw: string }
     | { manager: PackageManager; action: 'run'; scriptName: string; raw: string };
 
-let containerPromise: Promise<WebContainer> | null = null;
-let lastSyncedFiles = new Set<string>();
+declare global {
+    // eslint-disable-next-line no-var
+    var __webcontainerState:
+        | {
+              promise?: Promise<WebContainer>;
+              lastSyncedFiles: Set<string>;
+          }
+        | undefined;
+}
+
+const getContainerState = () => {
+    if (!globalThis.__webcontainerState) {
+        globalThis.__webcontainerState = {
+            lastSyncedFiles: new Set<string>(),
+        };
+    }
+    return globalThis.__webcontainerState;
+};
 
 function getNodePath(nodes: Record<string, VFSNode>, rootId: string, id: string): string {
     const parts: string[] = [];
@@ -91,6 +107,7 @@ async function ensureDirectory(container: WebContainer, path: string): Promise<v
 }
 
 async function syncWorkspace(container: WebContainer, vfs: VFSStructure): Promise<void> {
+    const state = getContainerState();
     const { files, directories } = collectWorkspaceEntries(vfs);
 
     for (const dir of directories) {
@@ -101,13 +118,13 @@ async function syncWorkspace(container: WebContainer, vfs: VFSStructure): Promis
         await container.fs.writeFile(filePath, contents);
     }
 
-    for (const previousPath of lastSyncedFiles) {
+    for (const previousPath of state.lastSyncedFiles) {
         if (!files.has(previousPath)) {
             await container.fs.rm(previousPath, { force: true });
         }
     }
 
-    lastSyncedFiles = new Set(files.keys());
+    state.lastSyncedFiles = new Set(files.keys());
 }
 
 async function dependenciesInstalled(container: WebContainer): Promise<boolean> {
@@ -120,10 +137,14 @@ async function dependenciesInstalled(container: WebContainer): Promise<boolean> 
 }
 
 async function getWebContainer(): Promise<WebContainer> {
-    if (!containerPromise) {
-        containerPromise = WebContainer.boot();
+    const state = getContainerState();
+    if (!state.promise) {
+        state.promise = WebContainer.boot().catch((error) => {
+            state.promise = undefined;
+            throw error;
+        });
     }
-    return containerPromise;
+    return state.promise;
 }
 
 async function ensurePackageManager(
