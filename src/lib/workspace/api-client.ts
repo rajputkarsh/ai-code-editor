@@ -100,10 +100,14 @@ export async function updateWorkspaceAPI(
   editorState?: EditorState
 ): Promise<boolean> {
   try {
+    const payload: { vfs: VFSStructure; editorState?: EditorState } = { vfs };
+    if (editorState !== undefined && editorState !== null) {
+      payload.editorState = editorState;
+    }
     const response = await fetch(`${API_BASE}/${workspaceId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ vfs, editorState }),
+      body: JSON.stringify(payload),
     });
 
     return response.ok;
