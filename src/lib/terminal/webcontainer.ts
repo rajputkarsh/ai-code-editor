@@ -20,9 +20,10 @@ const MAX_DEV_SERVER_MS = 20_000;
 const MAX_INSTALL_MS = 600_000;
 const DISALLOWED_SHELL_PATTERN = /[;&|`$<>]/;
 const WORKSPACE_DIR = '/workspace';
-const NPM_CACHE_DIR = `${WORKSPACE_DIR}/.npm-cache`;
-const YARN_CACHE_DIR = `${WORKSPACE_DIR}/.yarn-cache`;
-const PNPM_STORE_DIR = `${WORKSPACE_DIR}/.pnpm-store`;
+const CACHE_ROOT = '/tmp/webcontainer-cache';
+const NPM_CACHE_DIR = `${CACHE_ROOT}/npm`;
+const YARN_CACHE_DIR = `${CACHE_ROOT}/yarn`;
+const PNPM_STORE_DIR = `${CACHE_ROOT}/pnpm`;
 
 const ALLOWED_MANAGERS = ['npm', 'yarn', 'pnpm'] as const;
 type PackageManager = (typeof ALLOWED_MANAGERS)[number];
