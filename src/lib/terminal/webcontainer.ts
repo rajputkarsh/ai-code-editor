@@ -20,6 +20,9 @@ const MAX_DEV_SERVER_MS = 20_000;
 const MAX_INSTALL_MS = 600_000;
 const DISALLOWED_SHELL_PATTERN = /[;&|`$<>]/;
 const WORKSPACE_DIR = '/workspace';
+const NPM_CACHE_DIR = `${WORKSPACE_DIR}/.npm-cache`;
+const YARN_CACHE_DIR = `${WORKSPACE_DIR}/.yarn-cache`;
+const PNPM_STORE_DIR = `${WORKSPACE_DIR}/.pnpm-store`;
 
 const ALLOWED_MANAGERS = ['npm', 'yarn', 'pnpm'] as const;
 type PackageManager = (typeof ALLOWED_MANAGERS)[number];
@@ -288,6 +291,43 @@ function isDevScript(parsed: ParsedCommand): boolean {
     return parsed.action === 'run' && (parsed.scriptName === 'dev' || parsed.scriptName === 'start');
 }
 
+function getInstallArgs(manager: PackageManager): string[] {
+    if (manager === 'npm') {
+        return ['install', '--prefer-offline', '--no-audit', '--no-fund'];
+    }
+    return ['install', '--prefer-offline'];
+}
+
+function getInstallEnv(manager: PackageManager): Record<string, string> {
+    const baseEnv = {
+        TERM: 'dumb',
+        npm_config_progress: 'false',
+        npm_config_audit: 'false',
+        npm_config_fund: 'false',
+        npm_config_update_notifier: 'false',
+        npm_config_prefer_offline: 'true',
+        npm_config_cache: NPM_CACHE_DIR,
+    };
+
+    if (manager === 'yarn') {
+        return {
+            ...baseEnv,
+            YARN_CACHE_FOLDER: YARN_CACHE_DIR,
+            YARN_ENABLE_PROGRESS_BARS: '0',
+        };
+    }
+
+    if (manager === 'pnpm') {
+        return {
+            ...baseEnv,
+            PNPM_STORE_DIR: PNPM_STORE_DIR,
+            PNPM_DISABLE_PROGRESS: '1',
+        };
+    }
+
+    return baseEnv;
+}
+
 async function streamProcessOutput(
     process: WebContainerProcess,
     onEvent: (event: TerminalStreamEvent) => void
@@ -362,6 +402,9 @@ export async function runTerminalCommand(options: {
     if (parsed.action === 'run') {
         const hasDependencies = await dependenciesInstalled(container);
         if (!hasDependencies) {
+            await ensureDirectory(container, NPM_CACHE_DIR);
+            await ensureDirectory(container, YARN_CACHE_DIR);
+            await ensureDirectory(container, PNPM_STORE_DIR);
             onEvent({
                 type: 'status',
                 text: 'Dependencies missing. Installing in sandbox before running the script...',
@@ -369,18 +412,12 @@ export async function runTerminalCommand(options: {
             const installResult = await runProcessWithStreaming({
                 container,
                 command: parsed.manager,
-                args: ['install'],
+                args: getInstallArgs(parsed.manager),
                 cwd: WORKSPACE_DIR,
                 onEvent,
                 signal,
                 timeoutMs: MAX_INSTALL_MS,
-                env: {
-                    TERM: 'dumb',
-                    npm_config_progress: 'false',
-                    npm_config_audit: 'false',
-                    npm_config_fund: 'false',
-                    npm_config_update_notifier: 'false',
-                },
+                env: getInstallEnv(parsed.manager),
             });
             if (installResult.exitCode !== 0) {
                 onExit({
