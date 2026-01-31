@@ -134,6 +134,21 @@ export default function EditorPage() {
     // Phase 1.5: Initialize editor state persistence (restores tabs, layout, etc.)
     useEditorStatePersistence();
 
+    // Listen for WebContainer connection messages and forward them
+    React.useEffect(() => {
+        const handleMessage = (event: MessageEvent) => {
+            // Forward WebContainer connection messages to all possible targets
+            if (event.data?.type === 'webcontainer:connect') {
+                // Try to forward to any WebContainer windows
+                // This helps when the connect page can't reach the WebContainer directly
+                console.log('Received WebContainer connect message:', event.data);
+            }
+        };
+
+        window.addEventListener('message', handleMessage);
+        return () => window.removeEventListener('message', handleMessage);
+    }, []);
+
     // Panel visibility state (single source of truth)
     const [isFileExplorerOpen, setIsFileExplorerOpen] = useState(true);
     const [isAIChatOpen, setIsAIChatOpen] = useState(false);

@@ -15,9 +15,9 @@ import { WebContainer, type WebContainerProcess } from '@webcontainer/api';
 import type { VFSNode, VFSStructure } from '@/lib/workspace/types';
 import type { TerminalStreamEvent } from './types';
 
-const MAX_EXECUTION_MS = 60_000;
-const MAX_DEV_SERVER_MS = 120_000;
-const MAX_INSTALL_MS = 600_000;
+const MAX_EXECUTION_MS = 1200_000;
+const MAX_DEV_SERVER_MS = 1200_000;
+const MAX_INSTALL_MS = 1200_000;
 const DISALLOWED_SHELL_PATTERN = /[;&|`$<>]/;
 const WORKSPACE_DIR = '/workspace';
 const CACHE_ROOT = '/tmp/webcontainer-cache';

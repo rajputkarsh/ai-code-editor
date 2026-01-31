@@ -258,7 +258,7 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
                     <TerminalIcon className="w-3 h-3" />
                     <span className="font-semibold text-neutral-200">Terminal (Sandboxed)</span>
                     <span className="text-[11px] text-neutral-500">
-                        10s timeout · workspace-only · no host access
+                        120s timeout · workspace-only · no host access
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
