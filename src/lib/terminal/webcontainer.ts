@@ -342,13 +342,20 @@ function getInstallEnv(manager: PackageManager): Record<string, string> {
     return baseEnv;
 }
 
-function getRunEnv(isDev: boolean): Record<string, string> | undefined {
+function getRunEnv(isDev: boolean, port?: number): Record<string, string> | undefined {
     if (!isDev) return undefined;
     return {
         NEXT_DISABLE_TURBOPACK: '1',
         NEXT_DISABLE_SWC: '1',
         NEXT_TELEMETRY_DISABLED: '1',
+        PORT: port ? String(port) : '3001',
     };
+}
+
+function pickRandomPort(): number {
+    const min = 41000;
+    const max = 49000;
+    return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 async function streamProcessOutput(
@@ -456,6 +463,14 @@ export async function runTerminalCommand(options: {
     }
 
     const { command: spawnCommand, args } = getSpawnArgs(parsed);
+    const runPort = devScript ? pickRandomPort() : undefined;
+    if (runPort) {
+        onEvent({
+            type: 'status',
+            text: `Starting dev server on port ${runPort}.`,
+        });
+    }
+
     const result = await runProcessWithStreaming({
         container,
         command: spawnCommand,
@@ -473,7 +488,7 @@ export async function runTerminalCommand(options: {
         },
         signal,
         timeoutMs,
-        env: getRunEnv(devScript),
+        env: getRunEnv(devScript, runPort),
     });
 
     const durationMs = Date.now() - startedAt;
