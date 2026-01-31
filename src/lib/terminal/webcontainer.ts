@@ -15,8 +15,8 @@ import { WebContainer, type WebContainerProcess } from '@webcontainer/api';
 import type { VFSNode, VFSStructure } from '@/lib/workspace/types';
 import type { TerminalStreamEvent } from './types';
 
-const MAX_EXECUTION_MS = 30_000;
-const MAX_DEV_SERVER_MS = 20_000;
+const MAX_EXECUTION_MS = 60_000;
+const MAX_DEV_SERVER_MS = 120_000;
 const MAX_INSTALL_MS = 600_000;
 const DISALLOWED_SHELL_PATTERN = /[;&|`$<>]/;
 const WORKSPACE_DIR = '/workspace';
@@ -333,6 +333,7 @@ function getRunEnv(isDev: boolean): Record<string, string> | undefined {
     if (!isDev) return undefined;
     return {
         NEXT_DISABLE_TURBOPACK: '1',
+        NEXT_DISABLE_SWC: '1',
         NEXT_TELEMETRY_DISABLED: '1',
     };
 }

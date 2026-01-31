@@ -5,15 +5,17 @@ import { Upload, AlertCircle, FileCode } from 'lucide-react';
 import { useWorkspace } from '@/app/(editor)/stores/workspace-provider';
 import { isValidZipFile, createSampleReactProject } from '@/lib/workspace';
 import { useToast } from '@/components/ui/Toast';
+import { useFileSystem } from '@/app/(editor)/stores/file-system';
 
 export const ImportProject = () => {
   const toast = useToast();
   const { importFromZip, loadWorkspace, isLoading, error, workspace } = useWorkspace();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const { files } = useFileSystem();
 
   // Don't show import UI if workspace is already loaded
-  if (workspace) {
+  if (workspace && Array.isArray(files.root.children) && files.root.children.length) {
     return null;
   }
 
