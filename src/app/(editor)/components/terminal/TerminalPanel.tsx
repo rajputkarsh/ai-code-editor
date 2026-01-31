@@ -56,12 +56,52 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     const { vfs } = useWorkspace();
     const outputRef = useRef<HTMLDivElement | null>(null);
     const abortRef = useRef<AbortController | null>(null);
+    const resizeStateRef = useRef<{ startY: number; startHeight: number } | null>(null);
     const toast = useToast();
+    const [panelHeight, setPanelHeight] = useState(256);
+
+    const MIN_HEIGHT = 160;
+    const MAX_HEIGHT = 520;
 
     useEffect(() => {
         if (!outputRef.current) return;
         outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }, [lines]);
+
+    const updateHeight = (clientY: number) => {
+        if (!resizeStateRef.current) return;
+        const delta = resizeStateRef.current.startY - clientY;
+        const nextHeight = Math.min(
+            MAX_HEIGHT,
+            Math.max(MIN_HEIGHT, resizeStateRef.current.startHeight + delta)
+        );
+        setPanelHeight(nextHeight);
+    };
+
+    const stopResize = () => {
+        if (!resizeStateRef.current) return;
+        resizeStateRef.current = null;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+    };
+
+    useEffect(() => {
+        const handlePointerMove = (event: PointerEvent) => updateHeight(event.clientY);
+        const handlePointerUp = () => stopResize();
+        const handleMouseMove = (event: MouseEvent) => updateHeight(event.clientY);
+        const handleMouseUp = () => stopResize();
+
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, []);
 
     const combinedOutput = useMemo(
         () => lines.map((line) => line.text).join('\n'),
@@ -183,7 +223,35 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     };
 
     return (
-        <div className="flex flex-col h-64 border-t border-neutral-800 bg-[#0f0f0f]">
+        <div
+            className="flex flex-col border-t border-neutral-800 bg-[#0f0f0f] flex-none"
+            style={{ height: panelHeight }}
+        >
+            <div
+                className="h-3 bg-neutral-800 cursor-row-resize hover:bg-neutral-700"
+                onPointerDown={(event) => {
+                    resizeStateRef.current = {
+                        startY: event.clientY,
+                        startHeight: panelHeight,
+                    };
+                    document.body.style.cursor = 'row-resize';
+                    document.body.style.userSelect = 'none';
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                }}
+                onPointerUp={(event) => {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                }}
+                onMouseDown={(event) => {
+                    resizeStateRef.current = {
+                        startY: event.clientY,
+                        startHeight: panelHeight,
+                    };
+                    document.body.style.cursor = 'row-resize';
+                    document.body.style.userSelect = 'none';
+                }}
+                style={{ touchAction: 'none' }}
+                title="Drag to resize terminal"
+            />
             <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800 text-xs text-neutral-400">
                 <div className="flex items-center gap-2">
                     <TerminalIcon className="w-3 h-3" />
