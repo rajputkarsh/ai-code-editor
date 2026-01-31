@@ -32,23 +32,32 @@ type ParsedCommand =
     | { manager: PackageManager; action: 'install'; raw: string }
     | { manager: PackageManager; action: 'run'; scriptName: string; raw: string };
 
+type WebContainerEntry = {
+    promise?: Promise<WebContainer>;
+    lastSyncedFiles: Set<string>;
+};
+
 declare global {
     // eslint-disable-next-line no-var
     var __webcontainerState:
         | {
-              promise?: Promise<WebContainer>;
-              lastSyncedFiles: Set<string>;
+              containers: Map<string, WebContainerEntry>;
           }
         | undefined;
 }
 
-const getContainerState = () => {
+const getContainerState = (workspaceId: string) => {
     if (!globalThis.__webcontainerState) {
         globalThis.__webcontainerState = {
-            lastSyncedFiles: new Set<string>(),
+            containers: new Map(),
         };
     }
-    return globalThis.__webcontainerState;
+    const state = globalThis.__webcontainerState;
+    const existing = state.containers.get(workspaceId);
+    if (existing) return existing;
+    const fresh: WebContainerEntry = { lastSyncedFiles: new Set<string>() };
+    state.containers.set(workspaceId, fresh);
+    return fresh;
 };
 
 function getNodePath(nodes: Record<string, VFSNode>, rootId: string, id: string): string {
@@ -111,8 +120,12 @@ async function ensureDirectory(container: WebContainer, path: string): Promise<v
     }
 }
 
-async function syncWorkspace(container: WebContainer, vfs: VFSStructure): Promise<void> {
-    const state = getContainerState();
+async function syncWorkspace(
+    container: WebContainer,
+    vfs: VFSStructure,
+    workspaceId: string
+): Promise<void> {
+    const state = getContainerState(workspaceId);
     const { files, directories } = collectWorkspaceEntries(vfs);
 
     for (const dir of directories) {
@@ -193,8 +206,8 @@ async function runProcessWithStreaming(options: {
     };
 }
 
-async function getWebContainer(): Promise<WebContainer> {
-    const state = getContainerState();
+async function getWebContainer(workspaceId: string): Promise<WebContainer> {
+    const state = getContainerState(workspaceId);
     if (!state.promise) {
         state.promise = WebContainer.boot().catch((error) => {
             state.promise = undefined;
@@ -366,8 +379,10 @@ export async function runTerminalCommand(options: {
     onEvent: (event: TerminalStreamEvent) => void;
     onExit: (event: TerminalStreamEvent & { type: 'exit' }) => void;
     signal?: AbortSignal;
+    workspaceId?: string;
 }): Promise<void> {
-    const { command, vfs, onEvent, onExit, signal } = options;
+    const { command, vfs, onEvent, onExit, signal, workspaceId } = options;
+    const resolvedWorkspaceId = workspaceId ?? 'default';
     const startedAt = Date.now();
     const { parsed, error } = parseTerminalCommand(command);
 
@@ -390,10 +405,10 @@ export async function runTerminalCommand(options: {
         return;
     }
 
-    const container = await getWebContainer();
+    const container = await getWebContainer(resolvedWorkspaceId);
 
     onEvent({ type: 'status', text: 'Booting sandboxed environment...' });
-    await syncWorkspace(container, vfs);
+    await syncWorkspace(container, vfs, resolvedWorkspaceId);
     onEvent({ type: 'status', text: 'Workspace synced in sandbox.' });
 
     const managerReady = await ensurePackageManager(parsed.manager, container);

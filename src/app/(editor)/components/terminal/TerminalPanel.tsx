@@ -53,7 +53,7 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
         response: string;
     } | null>(null);
 
-    const { vfs } = useWorkspace();
+    const { vfs, activeWorkspaceId } = useWorkspace();
     const outputRef = useRef<HTMLDivElement | null>(null);
     const abortRef = useRef<AbortController | null>(null);
     const resizeStateRef = useRef<{ startY: number; startHeight: number } | null>(null);
@@ -170,6 +170,7 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
                     setIsRunning(false);
                 },
                 signal: controller.signal,
+                workspaceId: activeWorkspaceId ?? undefined,
             });
         } catch (error) {
             const message =
