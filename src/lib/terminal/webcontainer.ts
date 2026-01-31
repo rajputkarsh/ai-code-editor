@@ -35,6 +35,7 @@ type ParsedCommand =
 type WebContainerEntry = {
     promise?: Promise<WebContainer>;
     lastSyncedFiles: Set<string>;
+    serverListenerAttached?: boolean;
 };
 
 declare global {
@@ -349,6 +350,7 @@ function getRunEnv(isDev: boolean, port?: number): Record<string, string> | unde
         NEXT_DISABLE_SWC: '1',
         NEXT_TELEMETRY_DISABLED: '1',
         PORT: port ? String(port) : '3001',
+        HOSTNAME: '0.0.0.0',
     };
 }
 
@@ -356,6 +358,21 @@ function pickRandomPort(): number {
     const min = 41000;
     const max = 49000;
     return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function ensureServerListener(
+    container: WebContainer,
+    state: WebContainerEntry,
+    onEvent: (event: TerminalStreamEvent) => void
+) {
+    if (state.serverListenerAttached) return;
+    container.on('server-ready', (port, url) => {
+        onEvent({
+            type: 'status',
+            text: `Server ready on port ${port}. Open: ${url}`,
+        });
+    });
+    state.serverListenerAttached = true;
 }
 
 async function streamProcessOutput(
@@ -412,11 +429,14 @@ export async function runTerminalCommand(options: {
         return;
     }
 
+    const containerState = getContainerState(resolvedWorkspaceId);
     const container = await getWebContainer(resolvedWorkspaceId);
 
     onEvent({ type: 'status', text: 'Booting sandboxed environment...' });
     await syncWorkspace(container, vfs, resolvedWorkspaceId);
     onEvent({ type: 'status', text: 'Workspace synced in sandbox.' });
+
+    ensureServerListener(container, containerState, onEvent);
 
     const managerReady = await ensurePackageManager(parsed.manager, container);
     if (!managerReady.ok) {
