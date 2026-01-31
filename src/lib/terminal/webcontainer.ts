@@ -329,6 +329,14 @@ function getInstallEnv(manager: PackageManager): Record<string, string> {
     return baseEnv;
 }
 
+function getRunEnv(isDev: boolean): Record<string, string> | undefined {
+    if (!isDev) return undefined;
+    return {
+        NEXT_DISABLE_TURBOPACK: '1',
+        NEXT_TELEMETRY_DISABLED: '1',
+    };
+}
+
 async function streamProcessOutput(
     process: WebContainerProcess,
     onEvent: (event: TerminalStreamEvent) => void
@@ -449,6 +457,7 @@ export async function runTerminalCommand(options: {
         },
         signal,
         timeoutMs,
+        env: getRunEnv(devScript),
     });
 
     const durationMs = Date.now() - startedAt;

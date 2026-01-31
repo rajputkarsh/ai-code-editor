@@ -61,7 +61,7 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     const [panelHeight, setPanelHeight] = useState(256);
 
     const MIN_HEIGHT = 160;
-    const MAX_HEIGHT = 520;
+    const MAX_HEIGHT = 720;
 
     useEffect(() => {
         if (!outputRef.current) return;
