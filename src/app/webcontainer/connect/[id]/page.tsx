@@ -26,6 +26,8 @@ export default function WebContainerConnectPage({ params }: WebContainerConnectP
                     window.opener,
                 ].filter(Boolean) as Window[];
 
+                console.log(targets);
+
                 // Try different message formats that WebContainer might expect
                 const messages = [
                     { type: 'webcontainer:connect', token: id },

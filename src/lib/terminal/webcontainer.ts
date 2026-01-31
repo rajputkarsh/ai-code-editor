@@ -308,7 +308,14 @@ function isDevScript(parsed: ParsedCommand): boolean {
 
 function getInstallArgs(manager: PackageManager): string[] {
     if (manager === 'npm') {
-        return ['install', '--prefer-offline', '--no-audit', '--no-fund'];
+        return ['install', '--ignore-scripts', '--prefer-offline', '--no-audit', '--no-fund'];
+    }
+    // yarn and pnpm don't have exact --ignore-scripts equivalent, but we can try
+    if (manager === 'yarn') {
+        return ['install', '--prefer-offline', '--ignore-scripts'];
+    }
+    if (manager === 'pnpm') {
+        return ['install', '--prefer-offline', '--ignore-scripts'];
     }
     return ['install', '--prefer-offline'];
 }
@@ -351,6 +358,15 @@ function getRunEnv(isDev: boolean, port?: number): Record<string, string> | unde
         NEXT_TELEMETRY_DISABLED: '1',
         PORT: port ? String(port) : '3001',
         HOSTNAME: '0.0.0.0',
+        // Disable HMR and file watching
+        WATCHPACK_POLLING: 'false',
+        CHOKIDAR_USEPOLLING: 'false',
+        CHOKIDAR_INTERVAL: '0',
+        CHOKIDAR_IGNORED: '**',
+        // Disable Next.js HMR (if supported)
+        NEXT_DISABLE_HMR: '1',
+        // Disable file watching - ignore all file changes
+        WATCHPACK_IGNORED: '**',
     };
 }
 
