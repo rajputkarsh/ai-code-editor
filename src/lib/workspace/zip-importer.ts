@@ -11,6 +11,43 @@ export interface ZipImportOptions {
   projectName?: string;
 }
 
+const MAX_ZIP_BYTES = 200 * 1024 * 1024; // 200MB
+const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5MB per file
+const MAX_TOTAL_BYTES = 25 * 1024 * 1024; // 25MB total imported text
+
+const IGNORED_DIRS = new Set([
+  '.git',
+  'node_modules',
+  '.next',
+  'dist',
+  'build',
+  'out',
+  'coverage',
+  '.turbo',
+  '.cache',
+  '.idea',
+  '.vscode',
+  '__MACOSX',
+]);
+
+const IGNORED_FILES = new Set([
+  '.DS_Store',
+  'Thumbs.db',
+]);
+
+function shouldIgnorePath(pathParts: string[], name: string): boolean {
+  if (IGNORED_FILES.has(name)) return true;
+  return pathParts.some((part) => IGNORED_DIRS.has(part));
+}
+
+function getZipEntrySize(zipEntry: JSZip.JSZipObject): number | null {
+  const maybeEntry = zipEntry as unknown as {
+    _data?: { uncompressedSize?: number };
+  };
+  const size = maybeEntry._data?.uncompressedSize;
+  return typeof size === 'number' ? size : null;
+}
+
 /**
  * Import a ZIP file and create a workspace
  */
@@ -21,6 +58,13 @@ export async function importZipFile(
   const zip = new JSZip();
   
   try {
+    if (file.size > MAX_ZIP_BYTES) {
+      throw new Error(
+        `ZIP file is too large (${Math.round(file.size / (1024 * 1024))}MB). ` +
+        `Please remove node_modules/.git and try again.`
+      );
+    }
+
     // Load ZIP file
     const zipContent = await zip.loadAsync(file);
     
@@ -35,6 +79,9 @@ export async function importZipFile(
     // Get all files and sort by path (to ensure parents are created first)
     const files = Object.keys(zipContent.files).sort();
     
+    let totalBytes = 0;
+    let skippedFiles = 0;
+
     for (const path of files) {
       const zipEntry = zipContent.files[path];
       
@@ -45,6 +92,10 @@ export async function importZipFile(
       const normalizedPath = path.replace(/^\/+|\/+$/g, '');
       const pathParts = normalizedPath.split('/');
       const name = pathParts[pathParts.length - 1];
+      if (shouldIgnorePath(pathParts, name)) {
+        skippedFiles += 1;
+        continue;
+      }
       
       // Build parent path
       const parentPath = pathParts.slice(0, -1).join('/');
@@ -76,7 +127,20 @@ export async function importZipFile(
         }
       } else {
         // It's a file
+        const entrySize = getZipEntrySize(zipEntry);
+        if (entrySize && entrySize > MAX_FILE_BYTES) {
+          skippedFiles += 1;
+          continue;
+        }
+
         const content = await zipEntry.async('text');
+        totalBytes += content.length;
+        if (totalBytes > MAX_TOTAL_BYTES) {
+          throw new Error(
+            'Imported project is too large after filtering. ' +
+            'Please remove node_modules/.git and large assets before importing.'
+          );
+        }
         vfs.createFile(parentFolderId, name, content);
       }
     }
@@ -92,13 +156,23 @@ export async function importZipFile(
       lastOpenedAt: new Date(),
     };
     
-    return {
+    const workspace: Workspace = {
       metadata,
       vfs: vfs.getStructure(),
     };
+
+    if (skippedFiles > 0) {
+      console.warn(`[ZIP Import] Skipped ${skippedFiles} files due to ignore rules or size limits.`);
+    }
+
+    return workspace;
   } catch (error) {
     console.error('Failed to import ZIP file:', error);
-    throw new Error('Failed to extract ZIP file. Please ensure it is a valid ZIP archive.');
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Failed to extract ZIP file. Please ensure it is a valid ZIP archive.';
+    throw new Error(message);
   }
 }
 
