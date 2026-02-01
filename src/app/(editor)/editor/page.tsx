@@ -25,6 +25,8 @@ import { ChatContext } from '@/lib/ai/types';
 import { detectLanguage } from '@/lib/file-utils';
 import { useEditorStatePersistence } from '../stores/editor-persistence';
 import { TerminalPanel } from '../components/terminal/TerminalPanel';
+import { LivePreviewPanel } from '../components/preview/LivePreviewPanel';
+import { PreviewManager } from '@/lib/preview/preview-manager';
 
 const EditorArea = () => {
     const { activeTabId, activeSecondaryTabId, isSplit, tabs, activePaneForFileOpen, setActivePaneForFileOpen } = useEditorState();
@@ -153,9 +155,21 @@ export default function EditorPage() {
     const [isFileExplorerOpen, setIsFileExplorerOpen] = useState(true);
     const [isAIChatOpen, setIsAIChatOpen] = useState(false);
     const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [isPromptHistoryOpen, setIsPromptHistoryOpen] = useState(false);
     const [isGitHubImportOpen, setIsGitHubImportOpen] = useState(false);
     const [isImportingRepo, setIsImportingRepo] = useState(false);
+    
+    // Preview state
+    const [previewState, setPreviewState] = useState({
+        previewUrl: null as string | null,
+        error: null as string | null,
+        isLoading: false,
+        projectType: 'unsupported' as string,
+    });
+    
+    // Preview manager
+    const previewManagerRef = React.useRef<PreviewManager | null>(null);
     
     // Phase 2: AI code actions and explanations
     const [isCodeActionMenuOpen, setIsCodeActionMenuOpen] = useState(false);
@@ -176,10 +190,72 @@ export default function EditorPage() {
     const { addMessage, setContextInfo } = useAIChatState();
     const { activeTabId, tabs } = useEditorState();
     const { files, updateFileContent, createFile, createFolder, rootId } = useFileSystem();
-    const { createNewWorkspace, saveWorkspace, isLoading } = useWorkspace();
+    const { createNewWorkspace, saveWorkspace, isLoading, vfs, workspace } = useWorkspace();
     const { selection, hasSelection } = useSelectionState();
     const { setLoadingAction, setLoadingExplanation, addPromptToHistory } = useInlineAI();
     const toast = useToast();
+    
+    // Initialize preview manager
+    React.useEffect(() => {
+        if (!previewManagerRef.current) {
+            previewManagerRef.current = new PreviewManager({
+                onStateChange: (state) => {
+                    setPreviewState({
+                        previewUrl: state.previewUrl,
+                        error: state.error,
+                        isLoading: state.isLoading,
+                        projectType: state.projectType,
+                    });
+                },
+                debounceMs: 300,
+                workspaceId: workspace?.metadata.id,
+                onStatusChange: (status) => {
+                    // Optionally show status in UI (e.g., toast or status bar)
+                    console.log('[Preview]', status);
+                },
+            });
+        } else {
+            // Update workspace ID if it changes
+            if (workspace?.metadata.id) {
+                // Note: PreviewManager doesn't have a setWorkspaceId method yet
+                // For now, we'll recreate it if workspace changes
+                // In production, we'd add a method to update workspaceId
+            }
+        }
+        
+        return () => {
+            if (previewManagerRef.current) {
+                previewManagerRef.current.dispose();
+                previewManagerRef.current = null;
+            }
+        };
+    }, [workspace?.metadata.id]);
+    
+    // Update preview manager when VFS changes
+    React.useEffect(() => {
+        if (previewManagerRef.current && vfs) {
+            previewManagerRef.current.updateVFS(vfs.getStructure());
+        }
+    }, [vfs]);
+    
+    // Handle preview toggle
+    const handlePreviewToggle = React.useCallback(() => {
+        if (!previewManagerRef.current) return;
+        
+        if (isPreviewOpen) {
+            previewManagerRef.current.disable();
+            setIsPreviewOpen(false);
+        } else {
+            previewManagerRef.current.enable();
+            setIsPreviewOpen(true);
+        }
+    }, [isPreviewOpen]);
+    
+    // Handle preview refresh
+    const handlePreviewRefresh = React.useCallback(() => {
+        if (!previewManagerRef.current || !vfs) return;
+        previewManagerRef.current.updateVFS(vfs.getStructure());
+    }, [vfs]);
 
     /**
      * Handle template selection from AI chat panel
@@ -643,9 +719,11 @@ export default function EditorPage() {
                             isFileExplorerOpen={isFileExplorerOpen}
                             isAIChatOpen={isAIChatOpen}
                             isTerminalOpen={isTerminalOpen}
+                            isPreviewOpen={isPreviewOpen}
                             onFileExplorerToggle={() => setIsFileExplorerOpen(!isFileExplorerOpen)}
                             onAIChatToggle={() => setIsAIChatOpen(!isAIChatOpen)}
                             onTerminalToggle={() => setIsTerminalOpen(!isTerminalOpen)}
+                            onPreviewToggle={handlePreviewToggle}
                             onCodeActionsClick={() => setIsCodeActionMenuOpen(true)}
                             onPromptHistoryClick={() => setIsPromptHistoryOpen(true)}
                             onExplainClick={handleExplainCode}
@@ -665,6 +743,19 @@ export default function EditorPage() {
                     <LazyAIChatPanel 
                         onTemplateSelect={handleTemplateSelect}
                         onClose={() => setIsAIChatOpen(false)}
+                    />
+                )}
+                preview={isPreviewOpen && (
+                    <LivePreviewPanel
+                        previewUrl={previewState.previewUrl}
+                        error={previewState.error}
+                        isLoading={previewState.isLoading}
+                        projectType={previewState.projectType}
+                        onClose={() => {
+                            setIsPreviewOpen(false);
+                            previewManagerRef.current?.disable();
+                        }}
+                        onRefresh={handlePreviewRefresh}
                     />
                 )}
                 isSidebarOpen={isFileExplorerOpen}

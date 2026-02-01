@@ -4,6 +4,7 @@ interface EditorLayoutProps {
     sidebar: ReactNode;
     editor: ReactNode;
     aiChat?: ReactNode;
+    preview?: ReactNode;
     isSidebarOpen: boolean;
     onSidebarToggle?: () => void;
 }
@@ -12,6 +13,7 @@ export function EditorLayout({
     sidebar, 
     editor, 
     aiChat,
+    preview,
     isSidebarOpen,
     onSidebarToggle
 }: EditorLayoutProps) {
@@ -38,6 +40,9 @@ export function EditorLayout({
 
             {/* AI Chat Panel */}
             {aiChat}
+
+            {/* Preview Panel */}
+            {preview}
 
             {/* Overlay for mobile when sidebar is open */}
             {isSidebarOpen && (

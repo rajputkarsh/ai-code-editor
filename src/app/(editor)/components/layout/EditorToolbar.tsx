@@ -11,16 +11,18 @@
  */
 
 import React from 'react';
-import { PanelLeft, MessageSquare, Wand2, Clock, FileText, Github, Terminal } from 'lucide-react';
+import { PanelLeft, MessageSquare, Wand2, Clock, FileText, Github, Terminal, Monitor } from 'lucide-react';
 import { WorkspaceSelector } from './WorkspaceSelector';
 
 interface EditorToolbarProps {
     isFileExplorerOpen: boolean;
     isAIChatOpen: boolean;
     isTerminalOpen: boolean;
+    isPreviewOpen: boolean;
     onFileExplorerToggle: () => void;
     onAIChatToggle: () => void;
     onTerminalToggle: () => void;
+    onPreviewToggle: () => void;
     onCodeActionsClick?: () => void;
     onPromptHistoryClick?: () => void;
     onExplainClick?: () => void;
@@ -31,9 +33,11 @@ export function EditorToolbar({
     isFileExplorerOpen,
     isAIChatOpen,
     isTerminalOpen,
+    isPreviewOpen,
     onFileExplorerToggle,
     onAIChatToggle,
     onTerminalToggle,
+    onPreviewToggle,
     onCodeActionsClick,
     onPromptHistoryClick,
     onExplainClick,
@@ -113,6 +117,16 @@ export function EditorToolbar({
                     aria-label={isTerminalOpen ? 'Hide terminal' : 'Show terminal'}
                 >
                     <Terminal className="w-3 h-3" />
+                </button>
+
+                {/* Preview Toggle */}
+                <button
+                    onClick={onPreviewToggle}
+                    className={`p-1 rounded-md transition-colors ${isPreviewOpen ? 'bg-blue-600 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
+                    title={isPreviewOpen ? 'Hide preview' : 'Show preview'}
+                    aria-label={isPreviewOpen ? 'Hide preview' : 'Show preview'}
+                >
+                    <Monitor className="w-3 h-3" />
                 </button>
             </div>
         </div>
