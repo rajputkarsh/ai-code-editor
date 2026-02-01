@@ -99,12 +99,20 @@ export class DevServerManager {
     // Start the dev server
     return new Promise((resolve, reject) => {
       let resolved = false;
-      const timeout = setTimeout(() => {
+      let timeoutId: ReturnType<typeof setTimeout> | null = setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          reject(new Error(`Dev server failed to start within 60 seconds`));
+          timeoutId = null;
+          reject(new Error(`Dev server failed to start within 90 seconds`));
         }
-      }, 60000);
+      }, 90000);
+      
+      const clearTimeoutSafe = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      };
 
       streamTerminalExecution({
         command,
@@ -129,7 +137,7 @@ export class DevServerManager {
               serverInfo.port = port;
               serverInfo.isRunning = true;
               
-              clearTimeout(timeout);
+              clearTimeoutSafe();
               if (!resolved) {
                 resolved = true;
                 this.options.onServerReady?.(serverInfo);
@@ -155,7 +163,7 @@ export class DevServerManager {
               serverInfo.port = this.extractPortFromUrl(url);
               serverInfo.isRunning = true;
               
-              clearTimeout(timeout);
+              clearTimeoutSafe();
               resolved = true;
               this.options.onServerReady?.(serverInfo);
               resolve(url);
@@ -166,7 +174,7 @@ export class DevServerManager {
               serverInfo.port = 5173;
               serverInfo.isRunning = true;
               
-              clearTimeout(timeout);
+              clearTimeoutSafe();
               resolved = true;
               this.options.onServerReady?.(serverInfo);
               resolve(defaultViteUrl);
@@ -176,8 +184,11 @@ export class DevServerManager {
             // "Local:        http://localhost:3000"
             // "Ready in Xms"
             // "- Local:        http://localhost:3000"
+            // "○ Compiling / ..."
+            // "✓ Ready in Xms"
             const nextUrlMatch = text.match(/(?:Local|➜).*?(https?:\/\/[^\s\)]+)/i);
-            const nextReadyMatch = text.match(/Ready\s+in/i);
+            const nextReadyMatch = text.match(/(?:✓|Ready)\s+(?:in|compiled)/i);
+            const nextCompilingMatch = text.match(/○\s+Compiling/i);
             
             if (nextUrlMatch && !resolved && projectType === 'nextjs') {
               const url = nextUrlMatch[1].trim().replace(/[\)\s]+$/, '');
@@ -185,7 +196,7 @@ export class DevServerManager {
               serverInfo.port = this.extractPortFromUrl(url);
               serverInfo.isRunning = true;
               
-              clearTimeout(timeout);
+              clearTimeoutSafe();
               resolved = true;
               this.options.onServerReady?.(serverInfo);
               resolve(url);
@@ -196,36 +207,94 @@ export class DevServerManager {
               serverInfo.port = 3000;
               serverInfo.isRunning = true;
               
-              clearTimeout(timeout);
+              clearTimeoutSafe();
               resolved = true;
               this.options.onServerReady?.(serverInfo);
               resolve(defaultNextUrl);
+            } else if (nextCompilingMatch && !resolved && projectType === 'nextjs') {
+              // Next.js is compiling - this is a good sign, extend timeout
+              clearTimeoutSafe();
+              timeoutId = setTimeout(() => {
+                if (!resolved) {
+                  resolved = true;
+                  timeoutId = null;
+                  reject(new Error(`Dev server is still compiling after 120 seconds. Please check the terminal for details.`));
+                }
+              }, 120000);
             }
           }
 
           if (event.type === 'error') {
             this.options.onServerError?.(event.text);
-            if (!resolved && event.text.includes('failed') || event.text.includes('error')) {
-              clearTimeout(timeout);
+            // Only reject on actual errors, not warnings
+            if (!resolved && (event.text.includes('failed') || event.text.includes('Error:') || event.text.includes('error:'))) {
+              clearTimeoutSafe();
               if (!resolved) {
                 resolved = true;
+                serverInfo.isRunning = false;
                 reject(new Error(event.text));
               }
             }
           }
+
+          // Handle exit events - for dev servers, exit code 124 means it's still running
+          if (event.type === 'exit') {
+            // Exit code 124 is used for long-running dev servers that are still active
+            // This means the process is running but hit a timeout (which is expected for dev servers)
+            if (event.exitCode === 124) {
+              // If server is already running, this is fine
+              if (serverInfo.isRunning) {
+                return;
+              }
+              // If server isn't running yet, it might still be starting
+              // Don't reject immediately - wait a bit more
+              if (!resolved) {
+                // Extend timeout a bit more
+                clearTimeoutSafe();
+                timeoutId = setTimeout(() => {
+                  if (!resolved && !serverInfo.isRunning) {
+                    resolved = true;
+                    timeoutId = null;
+                    reject(new Error('Dev server process timed out before becoming ready. Check terminal for details.'));
+                  }
+                }, 30000);
+              }
+              return;
+            }
+            // For other exit codes, only reject if server wasn't marked as running
+            if (!resolved && !serverInfo.isRunning && event.exitCode !== 0) {
+              clearTimeoutSafe();
+              resolved = true;
+              serverInfo.isRunning = false;
+              reject(new Error(`Dev server exited with code ${event.exitCode}`));
+            }
+          }
         },
         onDone: () => {
-          // Server stopped
-          serverInfo.isRunning = false;
+          // Stream ended - this is normal for long-running processes
+          // For dev servers, the stream ends but the server continues running
+          // Don't reject if server is already running
+          if (serverInfo.isRunning) {
+            // Server is running, stream ending is expected
+            return;
+          }
+          // Only reject if we never detected the server as ready
+          // Give it a bit more time - sometimes the ready message comes right before stream ends
           if (!resolved) {
-            clearTimeout(timeout);
-            resolved = true;
-            reject(new Error('Dev server stopped unexpectedly'));
+            // Wait a bit longer to see if server becomes ready
+            setTimeout(() => {
+              if (!resolved && !serverInfo.isRunning) {
+                clearTimeoutSafe();
+                resolved = true;
+                serverInfo.isRunning = false;
+                reject(new Error('Dev server stream ended before server was ready. The server may still be starting - check the terminal output for details.'));
+              }
+            }, 5000);
           }
         },
       }).catch((error) => {
         if (!resolved) {
-          clearTimeout(timeout);
+          clearTimeoutSafe();
           resolved = true;
           serverInfo.isRunning = false;
           reject(error);
