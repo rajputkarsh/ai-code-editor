@@ -1,34 +1,28 @@
-# PHASE 4 – Terminal, Execution & Debugging Execution Prompt
+# PHASE 4.5 – Live Preview Inside the Editor Execution Prompt
 
-You are a **senior platform + developer tooling engineer** implementing  
-**PHASE 4: Terminal, Execution & Debugging** for a **Next.js (App Router) web-based code editor**.
+You are a **senior frontend + platform engineer** implementing  
+**PHASE 4.5: Live Preview Inside the Editor** for a **Next.js (App Router) web-based code editor**.
 
 Previous phases already implemented:
-- Editor & workspace foundations
+- Core editor & workspace
 - Authentication (Clerk)
 - Workspace persistence & sync
 - Inline AI & GitHub foundations
 - Multi-workspace management
-- Live preview
+- Terminal & execution (WebContainer-based)
 
-This phase introduces **code execution and debugging inside the browser**.
-
-You must prioritize:
-- Security
-- Isolation
-- Predictability
-- Non-destructive behavior
+This phase introduces **live preview for frontend projects** inside the editor.
 
 ---
 
 ## 🎯 PHASE GOAL
 
-Enable users to:
-- Run project scripts from a web terminal
-- Inspect logs and errors
-- Receive AI-assisted explanations for failures
+Enable developers to:
+- See real-time output of their code
+- Iterate quickly using an **edit → preview** loop
+- Stay fully inside the editor
 
-This phase should feel like a **safe, limited local dev experience**, not a production runtime.
+This phase focuses on **developer feedback**, not deployment or production builds.
 
 ---
 
@@ -36,133 +30,144 @@ This phase should feel like a **safe, limited local dev experience**, not a prod
 
 ---
 
-## 1️⃣ Web Terminal (Sandboxed)
+## 1️⃣ Live Preview Capabilities
 
 ### Requirements
-- Web-based terminal UI embedded in the editor
-- Terminal must support:
-  - `npm`
-  - `yarn`
-  - `pnpm`
-- Ability to run:
-  - `install`
-  - `dev`
-  - `build`
-  - custom scripts from `package.json`
+- Render application output **inside the editor UI**
+- Preview updates automatically when code changes
+- Preview always reflects the **active workspace**
 
-### Architecture Rules
-- Terminal execution must run in a **sandboxed environment**
-- No direct access to:
-  - Host filesystem
-  - Environment secrets
-  - Auth tokens
-- Execution must be **workspace-scoped**
+### Supported Preview Types (Initial)
+- Static HTML / CSS / JavaScript
+- React-based frontend apps (client-side only)
+- Basic dev servers:
+  - Vite
+  - Next.js (client-side preview only)
 
 ### Constraints
-- No root access
-- No long-running daemons
-- Hard execution timeouts
+- Preview is best-effort
+- If a project type is unsupported, fail gracefully
 
 ---
 
-## 2️⃣ Execution Model
+## 2️⃣ Preview Architecture
 
-### Behavior
-- Commands execute against:
-  - Active workspace only
-- Terminal output:
-  - Streams in real time
-  - Is persisted short-term (session scope)
+### Rendering Strategy
+- Preview must run inside an **isolated iframe**
+- No direct DOM access between:
+  - Editor runtime
+  - Preview runtime
 
-### Limits
-- CPU & memory limits enforced
-- Max execution time enforced
-- Graceful termination on timeout
+### Isolation Rules
+- Communication only via:
+  - `postMessage`
+  - Explicit message contracts
+- No shared global state
 
 ---
 
-## 3️⃣ AI + Terminal (Read-only Assistance)
-
-### Scope
-Add AI assistance for terminal output using **Gemini**.
-
-### Supported AI Actions
-- Explain why a command failed
-- Summarize long logs
-- Suggest possible fixes
+## 3️⃣ Source of Truth
 
 ### Rules
-- AI is:
-  - Read-only
-  - Non-destructive
-- AI must:
-  - Never run commands
-  - Never modify files
-- User explicitly triggers AI help
+- Preview consumes:
+  - Active workspace files
+  - Unsaved changes (optimistic preview)
+- Preview must NOT:
+  - Write to workspace
+  - Modify files
+  - Trigger autosave
+
+Workspace remains the single source of truth.
 
 ---
 
-## 4️⃣ Debug Assistance
+## 4️⃣ Preview Controls
 
-### Supported Inputs
-- Stack traces
-- Runtime errors
-- Build failures
-- Test failures (basic)
+### UI Requirements
+- Toggle preview on / off
+- Manual refresh button
+- Layout modes:
+  - Code-only
+  - Split view (editor + preview)
 
 ### Behavior
-- AI analyzes:
-  - Error message
-  - Stack trace
-  - Relevant file context
-- AI outputs:
-  - Root cause explanation
-  - Suggested fix (text only)
-  - Files likely involved
+- Preview must never block:
+  - Typing
+  - Editor interactions
+- Preview crashes must not affect editor state
+
+---
+
+## 5️⃣ Error Handling & Feedback
+
+### Scope
+- Capture runtime errors from preview execution
+- Display errors:
+  - Inside preview panel
+  - As non-blocking inline overlays
 
 ### Constraints
-- No auto-apply
-- No code modifications
-- Suggestions only
+- Errors must be:
+  - Descriptive
+  - Read-only
+- No automatic fixes
+- No AI auto-repair in this phase
 
 ---
 
-## 5️⃣ Integration Rules (CRITICAL)
-
-### Editor Integration
-- Terminal must:
-  - Consume active workspace state
-  - Never mutate editor state directly
-- Editor must:
-  - Remain responsive during execution
-  - Be isolated from terminal crashes
-
----
-
-## 🔐 SECURITY & ISOLATION
+## 6️⃣ Security & Isolation (CRITICAL)
 
 ### Mandatory Rules
-- Each terminal session:
-  - Is isolated per workspace
-  - Is isolated per user
-- No cross-workspace execution
-- No cross-user execution
-- No access to:
+- Preview execution must be sandboxed
+- Preview must NOT have access to:
+  - User credentials
+  - Clerk auth tokens
   - GitHub tokens
-  - Clerk auth context
   - Internal APIs
+- Network access:
+  - Restricted
+  - No arbitrary outbound requests (initially)
+
+---
+
+## 7️⃣ Performance Constraints
+
+### Requirements
+- Fast preview startup
+- Debounced rebuilds on file changes
+- Avoid full reloads unless required by framework
+
+### Rules
+- Preview rebuilds must:
+  - Never block editor UI
+  - Be cancellable on rapid changes
+
+---
+
+## 8️⃣ Integration Rules
+
+### Editor Integration
+- Preview reads from workspace context
+- Preview does NOT:
+  - Modify workspace state
+  - Trigger AI actions
+  - Interact with GitHub
+
+### AI Interaction
+- AI may reference preview output in future phases
+- No AI-driven preview analysis in this phase
 
 ---
 
 ## 🚫 OUT OF SCOPE (DO NOT IMPLEMENT)
 
-- Persistent terminal sessions
-- Background daemons
-- Debuggers (breakpoints, stepping)
-- Container orchestration UI
-- Production deployments
-- Server-side secrets
-- AI auto-fixing code
+- Production builds
+- Deployment or hosting
+- Server-side rendering previews
+- Mobile or device emulation
+- Real browser testing
+- Collaborative preview sessions
+- Preview-based code generation
 
 ---
 
@@ -171,35 +176,34 @@ Add AI assistance for terminal output using **Gemini**.
 - TypeScript strict
 - No `any`
 - Clear separation between:
-  - Terminal UI
-  - Execution backend
-  - AI assistance
+  - Editor runtime
+  - Preview runtime
 - Explicit comments explaining:
-  - Sandbox strategy
-  - Execution limits
-  - Security trade-offs
+  - Sandbox boundaries
+  - Preview limitations
+  - Why certain project types are unsupported
 
 ---
 
 ## ✅ EXPECTED OUTPUT
 
 At the end of this phase:
-1. Users can run project scripts in-browser
-2. Terminal output streams reliably
-3. Crashes or failures do not affect the editor
-4. AI can explain errors and logs
-5. No command runs without explicit user action
-6. System remains secure and predictable
+1. Users can enable a live preview inside the editor
+2. Preview updates reliably on code changes
+3. Unsaved changes are reflected optimistically
+4. Preview errors are visible but non-intrusive
+5. Editor performance remains unaffected
+6. Preview execution is secure and isolated
 
 ---
 
 ## 🧠 FINAL INSTRUCTION
 
-This phase is about **empowerment without risk**.
+This phase is about **fast feedback, not correctness guarantees**.
 
-Do not:
-- Add automation
-- Add background agents
-- Add deployment features
+Do not turn the preview into:
+- A deployment platform
+- A testing framework
+- An AI automation surface
 
-If something feels powerful but risky, **leave a comment and stop**.
+If a feature feels powerful but risky, **leave a comment and stop**.
