@@ -14,8 +14,9 @@ import { runSandboxedCommand } from '@/lib/terminal/sandbox';
 import type { TerminalAssistKind, TerminalStreamEvent } from '@/lib/terminal/types';
 import { getGeminiProvider } from '@/lib/ai/provider/gemini';
 import type { ChatMessage } from '@/lib/ai/types';
+import type { AppVariables } from '../middleware';
 
-const terminalApp = new Hono();
+const terminalApp = new Hono<{ Variables: AppVariables }>();
 
 const executeSchema = z.object({
     command: z.string().min(1).max(200),

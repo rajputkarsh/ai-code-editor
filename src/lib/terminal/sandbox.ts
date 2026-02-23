@@ -47,7 +47,7 @@ function getNodePath(nodes: Record<string, VFSNode>, rootId: string, id: string)
     let currentId: string | null = id;
 
     while (currentId) {
-        const node = nodes[currentId];
+        const node: VFSNode | undefined = nodes[currentId];
         if (!node) break;
         if (currentId !== rootId) {
             parts.unshift(node.name);
