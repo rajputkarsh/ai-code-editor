@@ -68,6 +68,12 @@ export function LivePreviewPanel({
     };
   }, [previewUrl]);
 
+  // Lifecycle logging: confirm iframe URL binding.
+  useEffect(() => {
+    if (!previewUrl) return;
+    console.info('[Preview] iframe src set', { previewUrl });
+  }, [previewUrl]);
+
   const displayError = error || iframeError;
 
   return (
@@ -134,7 +140,7 @@ export function LivePreviewPanel({
           <div className="absolute inset-0 flex items-center justify-center bg-neutral-900">
             <div className="text-center">
               <RefreshCw className="w-6 h-6 animate-spin text-neutral-400 mx-auto mb-2" />
-              <p className="text-sm text-neutral-400">Loading preview...</p>
+              <p className="text-sm text-neutral-400">Loading preview... This may take upto 5 minutes.</p>
             </div>
           </div>
         )}

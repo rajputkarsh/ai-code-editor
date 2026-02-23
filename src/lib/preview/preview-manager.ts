@@ -387,6 +387,11 @@ export class PreviewManager {
     // Check if server is already running
     const existingUrl = this.devServerManager.getServerUrl(projectType, this.options.workspaceId);
     if (existingUrl) {
+      console.info('[Preview] Reusing existing dev server URL', {
+        projectType,
+        workspaceId: this.options.workspaceId,
+        url: existingUrl,
+      });
       return existingUrl;
     }
 
@@ -398,6 +403,11 @@ export class PreviewManager {
         projectType,
         this.options.workspaceId
       );
+      console.info('[Preview] Dev server URL bound to preview state', {
+        projectType,
+        workspaceId: this.options.workspaceId,
+        url,
+      });
       return url;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to start dev server';

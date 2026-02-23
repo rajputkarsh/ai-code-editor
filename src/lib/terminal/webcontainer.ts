@@ -710,6 +710,7 @@ function getRunEnv(isDev: boolean, port?: number): Record<string, string> | unde
         NEXT_DISABLE_TURBOPACK: '1',
         NEXT_DISABLE_SWC: '1',
         NEXT_TELEMETRY_DISABLED: '1',
+        BROWSER: 'none',
         PORT: port ? String(port) : '3001',
         HOSTNAME: '0.0.0.0',
         // Disable HMR and file watching

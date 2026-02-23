@@ -1,6 +1,6 @@
 /**
  * Dev Server Manager
- * 
+ *
  * Phase 4.5: Automatically manages dev servers for Vite/Next.js projects.
  * Integrates with WebContainer to start dev servers and track their URLs.
  */
@@ -31,7 +31,6 @@ export class DevServerManager {
   private activeServers: Map<string, DevServerInfo> = new Map();
   private options: DevServerManagerOptions;
   private abortControllers: Map<string, AbortController> = new Map();
-  private serverReadyListeners: Set<(info: DevServerInfo) => void> = new Set();
 
   constructor(options: DevServerManagerOptions = {}) {
     this.options = options;
@@ -64,17 +63,10 @@ export class DevServerManager {
     workspaceId?: string
   ): Promise<string> {
     const key = this.getServerKey(projectType, workspaceId);
-    
-    // Check if server is already running
-    const existing = this.activeServers.get(key);
-    if (existing?.isRunning) {
-      return existing.url;
-    }
 
-    // Stop any existing server for this project
-    await this.stopDevServer(projectType, workspaceId);
+    // Strict lifecycle: one server process per workspace. Kill existing before spawn.
+    await this.stopWorkspaceServers(workspaceId);
 
-    // Determine the command to run
     const command = this.getDevCommand(vfs, projectType);
     if (!command) {
       throw new Error(`No dev script found for ${projectType} project`);
@@ -82,11 +74,9 @@ export class DevServerManager {
 
     this.options.onStatusChange?.(`Starting ${projectType} dev server...`);
 
-    // Create abort controller for this server
     const abortController = new AbortController();
     this.abortControllers.set(key, abortController);
 
-    // Track server info
     const serverInfo: DevServerInfo = {
       url: '',
       port: 0,
@@ -96,17 +86,16 @@ export class DevServerManager {
     };
     this.activeServers.set(key, serverInfo);
 
-    // Start the dev server
     return new Promise((resolve, reject) => {
       let resolved = false;
       let timeoutId: ReturnType<typeof setTimeout> | null = setTimeout(() => {
         if (!resolved) {
           resolved = true;
           timeoutId = null;
-          reject(new Error(`Dev server failed to start within 90 seconds`));
+          reject(new Error('Dev server failed to start within 90 seconds'));
         }
-      }, 900_000);
-      
+      }, 90_000);
+
       const clearTimeoutSafe = () => {
         if (timeoutId) {
           clearTimeout(timeoutId);
@@ -115,29 +104,29 @@ export class DevServerManager {
       };
 
       const handleExit = (event: TerminalStreamEvent & { type: 'exit' }) => {
-        // Exit code 124 is used for long-running dev servers that are still active
-        // This means the process is running but hit a timeout (which is expected for dev servers)
+        // Exit code 124 is used for long-running dev servers in this runner.
         if (event.exitCode === 124) {
-          // If server is already running, this is fine
           if (serverInfo.isRunning) {
             return;
           }
-          // If server isn't running yet, it might still be starting
-          // Don't reject immediately - wait a bit more
+
           if (!resolved) {
-            // Extend timeout a bit more
             clearTimeoutSafe();
             timeoutId = setTimeout(() => {
               if (!resolved && !serverInfo.isRunning) {
                 resolved = true;
                 timeoutId = null;
-                reject(new Error('Dev server process timed out before becoming ready. Check terminal for details.'));
+                reject(
+                  new Error(
+                    'Dev server process timed out before becoming ready. Check terminal for details.'
+                  )
+                );
               }
-            }, 30000);
+            }, 30_000);
           }
           return;
         }
-        // For other exit codes, only reject if server wasn't marked as running
+
         if (!resolved && !serverInfo.isRunning && event.exitCode !== 0) {
           clearTimeoutSafe();
           resolved = true;
@@ -146,8 +135,7 @@ export class DevServerManager {
         }
       };
 
-      // Use the client-side WebContainer runner directly so preview and terminal share
-      // the same workspace-scoped container lifecycle and dependency cache.
+      // Reuse WebContainer execution path; do not open URLs externally.
       void runTerminalCommand({
         command,
         vfs,
@@ -158,118 +146,40 @@ export class DevServerManager {
             this.options.onStatusChange?.(event.text);
           }
 
-          // Parse server-ready events from WebContainer
-          if (event.type === 'status' && event.text.includes('Server ready')) {
-            // Extract URL from status message
-            // Format: "Server ready on port 12345. Open: https://..."
+          // Only trust WebContainer server-ready event status line.
+          if (event.type === 'status' && event.text.startsWith('Server ready on port')) {
             const urlMatch = event.text.match(/Open:\s*(https?:\/\/[^\s]+)/);
             const portMatch = event.text.match(/port\s+(\d+)/);
-            
-            if (urlMatch && portMatch) {
+
+            if (urlMatch && portMatch && !resolved) {
               const url = urlMatch[1];
               const port = parseInt(portMatch[1], 10);
-              
+              console.info('[Preview] server-ready fired', { projectType, workspaceId, port, url });
+              this.options.onStatusChange?.(`[Preview] URL received: ${url}`);
+
               serverInfo.url = url;
               serverInfo.port = port;
               serverInfo.isRunning = true;
-              
-              clearTimeoutSafe();
-              if (!resolved) {
-                resolved = true;
-                this.options.onServerReady?.(serverInfo);
-                resolve(url);
-              }
-            }
-          }
 
-          // Check for common dev server ready patterns in output
-          if (event.type === 'output' || event.type === 'status') {
-            const text = event.text;
-            
-            // Vite patterns:
-            // "Local: http://localhost:5173/"
-            // "  ➜  Local:   http://localhost:5173/"
-            // "VITE vX.X.X  ready in XXX ms"
-            const viteUrlMatch = text.match(/(?:Local|➜).*?(https?:\/\/[^\s\)]+)/i);
-            const viteReadyMatch = text.match(/VITE.*ready/i);
-            
-            if (viteUrlMatch && !resolved) {
-              const url = viteUrlMatch[1].trim().replace(/[\)\s]+$/, '');
-              serverInfo.url = url;
-              serverInfo.port = this.extractPortFromUrl(url);
-              serverInfo.isRunning = true;
-              
               clearTimeoutSafe();
               resolved = true;
               this.options.onServerReady?.(serverInfo);
               resolve(url);
-            } else if (viteReadyMatch && !resolved) {
-              // Vite is ready, try to construct URL from common port
-              const defaultViteUrl = 'http://localhost:5173';
-              serverInfo.url = defaultViteUrl;
-              serverInfo.port = 5173;
-              serverInfo.isRunning = true;
-              
-              clearTimeoutSafe();
-              resolved = true;
-              this.options.onServerReady?.(serverInfo);
-              resolve(defaultViteUrl);
-            }
-
-            // Next.js patterns:
-            // "Local:        http://localhost:3000"
-            // "Ready in Xms"
-            // "- Local:        http://localhost:3000"
-            // "○ Compiling / ..."
-            // "✓ Ready in Xms"
-            const nextUrlMatch = text.match(/(?:Local|➜).*?(https?:\/\/[^\s\)]+)/i);
-            const nextReadyMatch = text.match(/(?:✓|Ready)\s+(?:in|compiled)/i);
-            const nextCompilingMatch = text.match(/○\s+Compiling/i);
-            
-            if (nextUrlMatch && !resolved && projectType === 'nextjs') {
-              const url = nextUrlMatch[1].trim().replace(/[\)\s]+$/, '');
-              serverInfo.url = url;
-              serverInfo.port = this.extractPortFromUrl(url);
-              serverInfo.isRunning = true;
-              
-              clearTimeoutSafe();
-              resolved = true;
-              this.options.onServerReady?.(serverInfo);
-              resolve(url);
-            } else if (nextReadyMatch && !resolved && projectType === 'nextjs') {
-              // Next.js is ready, try to construct URL from common port
-              const defaultNextUrl = 'http://localhost:3000';
-              serverInfo.url = defaultNextUrl;
-              serverInfo.port = 3000;
-              serverInfo.isRunning = true;
-              
-              clearTimeoutSafe();
-              resolved = true;
-              this.options.onServerReady?.(serverInfo);
-              resolve(defaultNextUrl);
-            } else if (nextCompilingMatch && !resolved && projectType === 'nextjs') {
-              // Next.js is compiling - this is a good sign, extend timeout
-              clearTimeoutSafe();
-              timeoutId = setTimeout(() => {
-                if (!resolved) {
-                  resolved = true;
-                  timeoutId = null;
-                  reject(new Error(`Dev server is still compiling after 120 seconds. Please check the terminal for details.`));
-                }
-              }, 120000);
             }
           }
 
           if (event.type === 'error') {
             this.options.onServerError?.(event.text);
-            // Only reject on actual errors, not warnings
-            if (!resolved && (event.text.includes('failed') || event.text.includes('Error:') || event.text.includes('error:'))) {
+            if (
+              !resolved &&
+              (event.text.includes('failed') ||
+                event.text.includes('Error:') ||
+                event.text.includes('error:'))
+            ) {
               clearTimeoutSafe();
-              if (!resolved) {
-                resolved = true;
-                serverInfo.isRunning = false;
-                reject(new Error(event.text));
-              }
+              resolved = true;
+              serverInfo.isRunning = false;
+              reject(new Error(event.text));
             }
           }
         },
@@ -293,7 +203,7 @@ export class DevServerManager {
   async stopDevServer(projectType: 'vite' | 'nextjs', workspaceId?: string): Promise<void> {
     const key = this.getServerKey(projectType, workspaceId);
     const abortController = this.abortControllers.get(key);
-    
+
     if (abortController) {
       abortController.abort();
       this.abortControllers.delete(key);
@@ -307,14 +217,29 @@ export class DevServerManager {
   }
 
   /**
+   * Stop all running servers for a workspace
+   */
+  async stopWorkspaceServers(workspaceId?: string): Promise<void> {
+    const suffix = `:${workspaceId || 'default'}`;
+    const keys = Array.from(this.activeServers.keys()).filter((key) => key.endsWith(suffix));
+
+    await Promise.all(
+      keys.map((key) => {
+        const [projectType, workspaceIdFromKey] = key.split(':');
+        return this.stopDevServer(projectType as 'vite' | 'nextjs', workspaceIdFromKey || undefined);
+      })
+    );
+  }
+
+  /**
    * Stop all dev servers
    */
   async stopAllServers(): Promise<void> {
     const keys = Array.from(this.activeServers.keys());
     await Promise.all(
       keys.map((key) => {
-        const [projectType] = key.split(':');
-        return this.stopDevServer(projectType as 'vite' | 'nextjs');
+        const [projectType, workspaceIdFromKey] = key.split(':');
+        return this.stopDevServer(projectType as 'vite' | 'nextjs', workspaceIdFromKey || undefined);
       })
     );
   }
@@ -323,7 +248,6 @@ export class DevServerManager {
    * Get the dev command for a project type
    */
   private getDevCommand(vfs: VFSStructure, projectType: 'vite' | 'nextjs'): string | null {
-    // Find package.json
     const packageJsonNode = Object.values(vfs.nodes).find(
       (node) => node.name === 'package.json' && node.type === 'file'
     );
@@ -338,38 +262,24 @@ export class DevServerManager {
       };
 
       const scripts = packageJson.scripts || {};
-      
-      // Check for common dev script names
       if (scripts.dev) {
-        return `npm run dev`;
+        return 'npm run dev';
       }
       if (scripts.start) {
-        return `npm start`;
+        return 'npm start';
       }
       if (scripts['start:dev']) {
-        return `npm run start:dev`;
+        return 'npm run start:dev';
       }
 
-      // Default based on project type
-      if (projectType === 'vite') {
-        return `npm run dev`;
-      }
-      if (projectType === 'nextjs') {
-        return `npm run dev`;
+      if (projectType === 'vite' || projectType === 'nextjs') {
+        return 'npm run dev';
       }
 
       return null;
     } catch {
       return null;
     }
-  }
-
-  /**
-   * Extract port from URL
-   */
-  private extractPortFromUrl(url: string): number {
-    const match = url.match(/:(\d+)/);
-    return match ? parseInt(match[1], 10) : 0;
   }
 
   /**
@@ -383,9 +293,8 @@ export class DevServerManager {
    * Cleanup resources
    */
   dispose(): void {
-    this.stopAllServers();
+    void this.stopAllServers();
     this.activeServers.clear();
     this.abortControllers.clear();
-    this.serverReadyListeners.clear();
   }
 }
