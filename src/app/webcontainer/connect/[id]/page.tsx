@@ -1,87 +1,49 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState } from 'react';
+import { auth } from '@webcontainer/api';
+import { env } from '@/lib/config/env';
 
-interface WebContainerConnectPageProps {
-    params: Promise<{
-        id: string;
-    }>;
+export default function WebContainerConnectPage() {
+  const [status, setStatus] = useState('Completing authorization...');
+
+  useEffect(() => {
+    const handleAuth = async () => {
+      try {
+        const result = await auth.init({
+          clientId: env.NEXT_PUBLIC_STACKBLITZ_CLIENT_ID,
+          scope: '',
+        });
+
+        console.log('Auth result:', result);
+        
+        if (result.status === 'authorized') {
+          setStatus('Authorized! You can close this tab.');
+        } else if (result.status === 'need-auth') {
+            // This opens the StackBlitz auth popup
+            await auth.startAuthFlow({ popup: true });
+            // After user authorizes, execution continues here
+            // and the container is ready to boot
+        } else {
+          setStatus('Authorization failed. You can close this tab.');
+        }
+      } catch {
+        setStatus('Something went wrong. You can close this tab.');
+      }
+    };
+    
+    handleAuth();
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
+      <div className="text-center space-y-3">
+        <h1 className="text-xl font-semibold">WebContainer Connection</h1>
+        <p className="text-sm text-neutral-400">{status}</p>
+        <p className="text-xs text-neutral-600">
+          If this tab doesn&apos;t close automatically, you can close it manually.
+        </p>
+      </div>
+    </div>
+  );
 }
-
-export default function WebContainerConnectPage({ params }: WebContainerConnectPageProps) {
-    const [status, setStatus] = useState('Connecting to WebContainer...');
-
-    const { id } = use(params);
-
-    useEffect(() => {
-        if (!id) return;
-
-        // WebContainer expects the message to be sent with the token
-        // Try multiple message formats that WebContainer might recognize
-        const sendConnectionMessage = () => {
-            try {
-                const targets = [
-                    window.top,
-                    window.parent,
-                    window.opener,
-                ].filter(Boolean) as Window[];
-
-                console.log(targets);
-
-                // Try different message formats that WebContainer might expect
-                const messages = [
-                    { type: 'webcontainer:connect', token: id },
-                    { type: 'webcontainer:connect', id },
-                    id, // Some implementations just send the token directly
-                ];
-
-                let sent = false;
-                for (const target of targets) {
-                    if (target && target !== window) {
-                        for (const message of messages) {
-                            try {
-                                target.postMessage(message, '*');
-                                sent = true;
-                            } catch (e) {
-                                // Continue trying other formats
-                            }
-                        }
-                    }
-                }
-
-                if (sent) {
-                    setStatus('Connection message sent. You can close this tab.');
-                    // setTimeout(() => {
-                    //     try {
-                    //         window.close();
-                    //     } catch {
-                    //         // Ignore if can't close
-                    //     }
-                    // }, 1000);
-                } else {
-                    setStatus('Unable to find target window. You can close this tab.');
-                }
-            } catch (error) {
-                console.error('Failed to send connection message:', error);
-                setStatus('Unable to connect. You can close this tab.');
-            }
-        };
-
-        // Small delay to ensure window is fully loaded
-        const timer = setTimeout(sendConnectionMessage, 100);
-        return () => clearTimeout(timer);
-    }, [id]);
-
-    return (
-        <div className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
-            <div className="text-center space-y-3">
-                <h1 className="text-xl font-semibold">WebContainer Connection</h1>
-                <p className="text-sm text-neutral-400">{status}</p>
-                <p className="text-xs text-neutral-600">
-                    If this tab doesn&apos;t close automatically, you can close it manually.
-                </p>
-            </div>
-        </div>
-    );
-}
-

@@ -22,6 +22,9 @@ const envSchema = z.object({
     // These limits enforce storage quotas per user and prevent abuse
     WORKSPACE_MAX_COUNT_PER_USER: z.coerce.number().positive().default(10),
     WORKSPACE_MAX_STORAGE_BYTES: z.coerce.number().positive().default(100 * 1024 * 1024), // 100MB default
+
+    // Stackblitz
+    NEXT_PUBLIC_STACKBLITZ_CLIENT_ID: z.string().min(1, 'Stackblitz client ID is required for WebContainer integration'),
 });
 
 const processEnv = {
@@ -44,6 +47,9 @@ const processEnv = {
     // Workspace limits
     WORKSPACE_MAX_COUNT_PER_USER: process.env.WORKSPACE_MAX_COUNT_PER_USER,
     WORKSPACE_MAX_STORAGE_BYTES: process.env.WORKSPACE_MAX_STORAGE_BYTES,
+
+    // Stackblitz
+    NEXT_PUBLIC_STACKBLITZ_CLIENT_ID: process.env.NEXT_PUBLIC_STACKBLITZ_CLIENT_ID,
 };
 
 // Parse and validate environment variables

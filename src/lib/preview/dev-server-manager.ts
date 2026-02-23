@@ -105,7 +105,7 @@ export class DevServerManager {
           timeoutId = null;
           reject(new Error(`Dev server failed to start within 90 seconds`));
         }
-      }, 90000);
+      }, 900_000);
       
       const clearTimeoutSafe = () => {
         if (timeoutId) {
