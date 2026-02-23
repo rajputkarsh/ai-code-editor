@@ -92,9 +92,9 @@ export class DevServerManager {
         if (!resolved) {
           resolved = true;
           timeoutId = null;
-          reject(new Error('Dev server failed to start within 90 seconds'));
+          reject(new Error('Dev server failed to start within 900 seconds'));
         }
-      }, 90_000);
+      }, 900_000);
 
       const clearTimeoutSafe = () => {
         if (timeoutId) {
