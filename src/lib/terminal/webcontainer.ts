@@ -21,6 +21,7 @@ const MAX_INSTALL_MS = 1200_000;
 const DISALLOWED_SHELL_PATTERN = /[;&|`$<>]/;
 const WORKSPACE_DIR = '/workspace';
 const CACHE_ROOT = '/tmp/webcontainer-cache';
+const INITIAL_MOUNT_STAGING_DIR = '/tmp/workspace-initial-mount';
 const NPM_CACHE_DIR = `${CACHE_ROOT}/npm`;
 const YARN_CACHE_DIR = `${CACHE_ROOT}/yarn`;
 const PNPM_STORE_DIR = `${CACHE_ROOT}/pnpm`;
@@ -44,6 +45,8 @@ type WebContainerEntry = {
         manager: PackageManager;
     };
     snapshotRestoreAttempted?: boolean;
+    snapshotRestored?: boolean;
+    initialWorkspaceMounted?: boolean;
 };
 
 type WorkspaceSnapshotRecord = {
@@ -264,27 +267,44 @@ async function restoreWorkspaceSnapshot(
     state: WebContainerEntry,
     workspaceId: string,
     onEvent?: (event: TerminalStreamEvent) => void
-): Promise<void> {
-    if (state.snapshotRestoreAttempted) return;
+): Promise<boolean> {
+    if (state.snapshotRestoreAttempted) {
+        return state.snapshotRestored ?? false;
+    }
     state.snapshotRestoreAttempted = true;
 
     try {
         const record = await loadWorkspaceSnapshot(workspaceId);
-        if (!record) return;
+        if (!record) {
+            state.snapshotRestored = false;
+            onEvent?.({
+                type: 'status',
+                text: 'No cached WebContainer snapshot found for this workspace.',
+            });
+            return false;
+        }
 
+        onEvent?.({
+            type: 'status',
+            text: 'Cached WebContainer snapshot found. Restoring filesystem state...',
+        });
         await ensureDirectory(container, WORKSPACE_DIR);
         await container.mount(record.snapshot, { mountPoint: WORKSPACE_DIR });
         state.dependencyState = {
             manifestHash: record.dependencyHash,
             manager: record.manager,
         };
+        state.snapshotRestored = true;
         onEvent?.({
             type: 'status',
             text: 'Restored cached WebContainer snapshot for this workspace.',
         });
+        return true;
     } catch (error) {
+        state.snapshotRestored = false;
         const message = error instanceof Error ? error.message : 'Failed to restore sandbox snapshot.';
         onEvent?.({ type: 'error', text: message });
+        return false;
     }
 }
 
@@ -377,7 +397,13 @@ async function getWebContainer(
             // Lifecycle decision: one WebContainer instance per workspace for the full browser session.
             const container = await WebContainer.boot();
             await ensureDirectory(container, WORKSPACE_DIR);
+            // Boot order is intentional: restore snapshot before any workspace file synchronization.
             await restoreWorkspaceSnapshot(container, state, workspaceId, onEvent);
+            const hasNodeModulesAfterRestore = await dependenciesInstalled(container);
+            onEvent?.({
+                type: 'status',
+                text: `node_modules after snapshot restore: ${hasNodeModulesAfterRestore ? 'present' : 'missing'}.`,
+            });
             return container;
         })().catch((error) => {
             state.promise = undefined;
@@ -492,6 +518,71 @@ function getInstallArgs(manager: PackageManager, hasPackageLock: boolean): strin
     return ['install', '--prefer-offline'];
 }
 
+function buildWorkspaceMountTree(vfs: VFSStructure): FileSystemTree {
+    const tree: Record<string, unknown> = {};
+    const { files, directories } = collectWorkspaceEntries(vfs);
+
+    const ensureDirectoryNode = (parts: string[]): Record<string, unknown> => {
+        let cursor: Record<string, unknown> = tree;
+        for (const part of parts) {
+            const existing = cursor[part] as { directory?: Record<string, unknown> } | undefined;
+            if (existing?.directory) {
+                cursor = existing.directory;
+                continue;
+            }
+            const next = { directory: {} as Record<string, unknown> };
+            cursor[part] = next;
+            cursor = next.directory;
+        }
+        return cursor;
+    };
+
+    for (const directoryPath of directories) {
+        if (directoryPath === WORKSPACE_DIR) continue;
+        const relativePath = directoryPath.replace(`${WORKSPACE_DIR}/`, '');
+        if (!relativePath || relativePath === directoryPath) continue;
+        const parts = relativePath.split('/').filter(Boolean);
+        ensureDirectoryNode(parts);
+    }
+
+    for (const [filePath, contents] of files) {
+        const relativePath = filePath.replace(`${WORKSPACE_DIR}/`, '');
+        if (!relativePath || relativePath === filePath) continue;
+        const parts = relativePath.split('/').filter(Boolean);
+        const fileName = parts.pop();
+        if (!fileName) continue;
+        const parent = ensureDirectoryNode(parts);
+        parent[fileName] = { file: { contents } };
+    }
+
+    return tree as FileSystemTree;
+}
+
+async function mountInitialWorkspaceIfNeeded(options: {
+    container: WebContainer;
+    state: WebContainerEntry;
+    vfs: VFSStructure;
+    workspaceId: string;
+    onEvent: (event: TerminalStreamEvent) => void;
+}): Promise<void> {
+    const { container, state, vfs, workspaceId, onEvent } = options;
+    if (state.snapshotRestored) return;
+    if (state.initialWorkspaceMounted) return;
+
+    // Never mount directly at /workspace during initialization; stage mount then merge files.
+    const mountTree = buildWorkspaceMountTree(vfs);
+    await ensureDirectory(container, INITIAL_MOUNT_STAGING_DIR);
+    await container.mount(mountTree, { mountPoint: INITIAL_MOUNT_STAGING_DIR });
+    const { files } = collectWorkspaceEntries(vfs);
+    state.lastSyncedFiles = new Set(files.keys());
+    state.initialWorkspaceMounted = true;
+    onEvent({
+        type: 'status',
+        text: `No snapshot restore available. Mounted workspace to staging for ${workspaceId} and merging files.`,
+    });
+    await container.fs.rm(INITIAL_MOUNT_STAGING_DIR, { recursive: true, force: true });
+}
+
 async function ensureDependenciesReady(options: {
     container: WebContainer;
     state: WebContainerEntry;
@@ -507,14 +598,28 @@ async function ensureDependenciesReady(options: {
 
     const hasPackageLock = workspaceHasPackageLock(vfs);
     const hasNodeModules = await dependenciesInstalled(container);
+    onEvent({
+        type: 'status',
+        text: `Dependency check: node_modules is ${hasNodeModules ? 'present' : 'missing'}.`,
+    });
     const manifestChanged =
         state.dependencyState?.manifestHash !== undefined &&
         state.dependencyState.manifestHash !== manifestHash;
+    if (manifestChanged) {
+        onEvent({
+            type: 'status',
+            text: 'Dependency check: package.json/package-lock.json changed since last install.',
+        });
+    }
 
     if (hasNodeModules && !manifestChanged) {
         if (!state.dependencyState) {
             state.dependencyState = { manifestHash, manager };
         }
+        onEvent({
+            type: 'status',
+            text: 'Dependency install skipped: cached node_modules is valid.',
+        });
         return { ok: true };
     }
 
@@ -698,8 +803,27 @@ export async function runTerminalCommand(options: {
     const container = await getWebContainer(resolvedWorkspaceId, onEvent);
 
     onEvent({ type: 'status', text: 'Booting sandboxed environment...' });
-    await syncWorkspace(container, vfs, resolvedWorkspaceId);
-    onEvent({ type: 'status', text: 'Workspace synced in sandbox.' });
+    if (containerState.snapshotRestored) {
+        // Snapshot path: merge only changed files to avoid touching restored node_modules.
+        await syncWorkspace(container, vfs, resolvedWorkspaceId);
+        onEvent({
+            type: 'status',
+            text: 'Snapshot restore active. Merged workspace file changes without remounting root.',
+        });
+    } else {
+        await mountInitialWorkspaceIfNeeded({
+            container,
+            state: containerState,
+            vfs,
+            workspaceId: resolvedWorkspaceId,
+            onEvent,
+        });
+        await syncWorkspace(container, vfs, resolvedWorkspaceId);
+        onEvent({
+            type: 'status',
+            text: 'Workspace synced in sandbox.',
+        });
+    }
 
     ensureServerListener(container, containerState, onEvent);
 
