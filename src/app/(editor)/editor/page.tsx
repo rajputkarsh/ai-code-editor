@@ -167,6 +167,9 @@ export default function EditorPage() {
         isLoading: false,
         projectType: 'unsupported' as string,
     });
+    const [previewReloadNonce, setPreviewReloadNonce] = useState(0);
+    const [previewPanelWidth, setPreviewPanelWidth] = useState(384);
+    const fileChangeReloadTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     
     // Preview manager
     const previewManagerRef = React.useRef<PreviewManager | null>(null);
@@ -253,9 +256,57 @@ export default function EditorPage() {
     
     // Handle preview refresh
     const handlePreviewRefresh = React.useCallback(() => {
-        if (!previewManagerRef.current || !vfs) return;
-        previewManagerRef.current.updateVFS(vfs.getStructure());
-    }, [vfs]);
+        if (!isPreviewOpen || !previewState.previewUrl) return;
+        console.info('[Preview] Manual refresh triggered');
+        setPreviewReloadNonce((prev) => prev + 1);
+
+        // For blob/static previews, regenerate preview content as part of refresh.
+        if (
+            previewManagerRef.current &&
+            vfs &&
+            (previewState.projectType === 'static' || previewState.projectType === 'react')
+        ) {
+            previewManagerRef.current.updateVFS(vfs.getStructure());
+        }
+    }, [isPreviewOpen, previewState.previewUrl, previewState.projectType, vfs]);
+
+    // Debounced auto-reload on workspace file edits.
+    React.useEffect(() => {
+        if (!isPreviewOpen || !vfs) return;
+        if (!['static', 'react', 'vite'].includes(previewState.projectType)) return;
+
+        if (fileChangeReloadTimerRef.current) {
+            clearTimeout(fileChangeReloadTimerRef.current);
+        }
+
+        fileChangeReloadTimerRef.current = setTimeout(() => {
+            const isDevServerProject = previewState.projectType === 'vite';
+            const hasDevServerUrl = Boolean(
+                previewState.previewUrl && /^https?:\/\//.test(previewState.previewUrl)
+            );
+
+            if (isDevServerProject && hasDevServerUrl) {
+                console.info('[Preview] File change detected → reloading iframe');
+                setPreviewReloadNonce((prev) => prev + 1);
+                return;
+            }
+
+            if (
+                previewManagerRef.current &&
+                (previewState.projectType === 'static' || previewState.projectType === 'react')
+            ) {
+                console.info('[Preview] File change detected → reloading iframe');
+                previewManagerRef.current.updateVFS(vfs.getStructure());
+            }
+        }, 400);
+
+        return () => {
+            if (fileChangeReloadTimerRef.current) {
+                clearTimeout(fileChangeReloadTimerRef.current);
+                fileChangeReloadTimerRef.current = null;
+            }
+        };
+    }, [files, isPreviewOpen, previewState.projectType, previewState.previewUrl, vfs]);
 
     /**
      * Handle template selection from AI chat panel
@@ -751,6 +802,7 @@ export default function EditorPage() {
                         error={previewState.error}
                         isLoading={previewState.isLoading}
                         projectType={previewState.projectType}
+                        refreshNonce={previewReloadNonce}
                         onClose={() => {
                             setIsPreviewOpen(false);
                             previewManagerRef.current?.disable();
@@ -758,6 +810,9 @@ export default function EditorPage() {
                         onRefresh={handlePreviewRefresh}
                     />
                 )}
+                isPreviewOpen={isPreviewOpen}
+                previewWidth={previewPanelWidth}
+                onPreviewWidthChange={setPreviewPanelWidth}
                 isSidebarOpen={isFileExplorerOpen}
                 onSidebarToggle={() => setIsFileExplorerOpen(!isFileExplorerOpen)}
             />

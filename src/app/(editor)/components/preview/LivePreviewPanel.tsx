@@ -21,6 +21,7 @@ export interface LivePreviewPanelProps {
   error: string | null;
   isLoading: boolean;
   projectType: string;
+  refreshNonce: number;
   onClose: () => void;
   onRefresh: () => void;
 }
@@ -30,9 +31,11 @@ export function LivePreviewPanel({
   error,
   isLoading,
   projectType,
+  refreshNonce,
   onClose,
   onRefresh,
 }: LivePreviewPanelProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [iframeError, setIframeError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -74,18 +77,86 @@ export function LivePreviewPanel({
     console.info('[Preview] iframe src set', { previewUrl });
   }, [previewUrl]);
 
+  const reloadIframe = React.useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !previewUrl) return;
+
+    try {
+      if (iframe.contentWindow) {
+        iframe.contentWindow.location.reload();
+      } else {
+        iframe.src = previewUrl;
+      }
+    } catch {
+      iframe.src = previewUrl;
+    }
+  }, [previewUrl]);
+
+  // Reload iframe when parent issues refresh (manual or auto).
+  useEffect(() => {
+    if (refreshNonce <= 0) return;
+    reloadIframe();
+  }, [refreshNonce, reloadIframe]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const docWithPrefix = document as Document & {
+      webkitExitFullscreen?: () => Promise<void>;
+      msExitFullscreen?: () => Promise<void>;
+    };
+    const elementWithPrefix = container as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void>;
+      msRequestFullscreen?: () => Promise<void>;
+    };
+
+    try {
+      if (document.fullscreenElement) {
+        console.info('[Preview] Exiting fullscreen');
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (docWithPrefix.webkitExitFullscreen) {
+          await docWithPrefix.webkitExitFullscreen();
+        } else if (docWithPrefix.msExitFullscreen) {
+          await docWithPrefix.msExitFullscreen();
+        }
+      } else {
+        console.info('[Preview] Entering fullscreen');
+        if (container.requestFullscreen) {
+          await container.requestFullscreen();
+        } else if (elementWithPrefix.webkitRequestFullscreen) {
+          await elementWithPrefix.webkitRequestFullscreen();
+        } else if (elementWithPrefix.msRequestFullscreen) {
+          await elementWithPrefix.msRequestFullscreen();
+        }
+      }
+    } catch (error) {
+      console.error('[Preview] Fullscreen toggle failed', error);
+      setIframeError('Failed to toggle fullscreen preview.');
+    }
+  };
+
   const displayError = error || iframeError;
 
   return (
     <div
+      ref={containerRef}
       className={`
         flex flex-col h-full bg-neutral-900 border-l border-neutral-800
-        w-full md:w-96
+        w-full
         shrink-0
         fixed md:relative
         top-0 right-0
         z-40
-        ${isFullscreen ? 'fixed inset-0 z-50 w-full' : ''}
       `}
     >
       {/* Preview Header */}
@@ -111,7 +182,7 @@ export function LivePreviewPanel({
           </button>
           
           <button
-            onClick={() => setIsFullscreen(!isFullscreen)}
+            onClick={toggleFullscreen}
             className="p-1.5 rounded hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors"
             title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}

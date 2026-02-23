@@ -254,12 +254,23 @@ export class PreviewManager {
     }
     
     const projectType = detectProjectType(this.vfs);
+
+    if (projectType === 'nextjs') {
+      this.updateState({
+        isEnabled: true,
+        projectType,
+        error: 'Next.js preview requires server-based execution. Turbopack is not supported in WebContainer.',
+        isLoading: false,
+        previewUrl: null,
+      });
+      return;
+    }
     
     if (projectType === 'unsupported') {
       this.updateState({
         isEnabled: true,
         projectType,
-        error: 'Project type not supported for preview. Supported types: static HTML, React, Vite, Next.js (client-side only)',
+        error: 'Project type not supported for preview. Supported types: static HTML, React, Vite.',
       });
       return;
     }
@@ -368,9 +379,11 @@ export class PreviewManager {
         return this.generateReactPreviewUrl(vfs);
         
       case 'vite':
-      case 'nextjs':
         // Automatically start dev server if not running
         return this.generateDevServerPreviewUrl(vfs, projectType);
+
+      case 'nextjs':
+        throw new Error('Next.js preview requires server-based execution. Turbopack is not supported in WebContainer.');
         
       default:
         throw new Error('Unsupported project type');
