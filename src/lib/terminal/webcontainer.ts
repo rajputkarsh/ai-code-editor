@@ -11,7 +11,7 @@
  * - Kill process on timeout or user abort.
  */
 
-import { WebContainer, type WebContainerProcess } from '@webcontainer/api';
+import { WebContainer, type FileSystemTree, type WebContainerProcess } from '@webcontainer/api';
 import type { VFSNode, VFSStructure } from '@/lib/workspace/types';
 import type { TerminalStreamEvent } from './types';
 
@@ -24,6 +24,8 @@ const CACHE_ROOT = '/tmp/webcontainer-cache';
 const NPM_CACHE_DIR = `${CACHE_ROOT}/npm`;
 const YARN_CACHE_DIR = `${CACHE_ROOT}/yarn`;
 const PNPM_STORE_DIR = `${CACHE_ROOT}/pnpm`;
+const SNAPSHOT_DB_NAME = 'ai-code-editor-webcontainer';
+const SNAPSHOT_STORE_NAME = 'workspace-snapshots';
 
 const ALLOWED_MANAGERS = ['npm', 'yarn', 'pnpm'] as const;
 type PackageManager = (typeof ALLOWED_MANAGERS)[number];
@@ -36,6 +38,20 @@ type WebContainerEntry = {
     promise?: Promise<WebContainer>;
     lastSyncedFiles: Set<string>;
     serverListenerAttached?: boolean;
+    installPromise?: Promise<number>;
+    dependencyState?: {
+        manifestHash: string;
+        manager: PackageManager;
+    };
+    snapshotRestoreAttempted?: boolean;
+};
+
+type WorkspaceSnapshotRecord = {
+    workspaceId: string;
+    snapshot: FileSystemTree;
+    dependencyHash: string;
+    manager: PackageManager;
+    updatedAt: number;
 };
 
 declare global {
@@ -104,6 +120,7 @@ function collectWorkspaceEntries(vfs: VFSStructure): {
             directories.add(dirPath);
         }
 
+        // Keep dependency manifests as normal workspace files so npm ci can run deterministically.
         files.set(targetPath, node.content ?? '');
     }
 
@@ -152,6 +169,149 @@ async function dependenciesInstalled(container: WebContainer): Promise<boolean> 
         return true;
     } catch {
         return false;
+    }
+}
+
+function findWorkspaceFile(vfs: VFSStructure, targetPath: string): string | null {
+    const normalized = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
+    const nodes = Object.values(vfs.nodes);
+    const target = normalized.replace(/\\/g, '/');
+    const fileNode = nodes.find(
+        (node) =>
+            node.type === 'file' &&
+            getNodePath(vfs.nodes, vfs.rootId, node.id).replace(/\\/g, '/') === target
+    );
+    return fileNode?.content ?? null;
+}
+
+function hashString(value: string): string {
+    let hash = 2166136261;
+    for (let i = 0; i < value.length; i += 1) {
+        hash ^= value.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16);
+}
+
+function computeDependencyManifestHash(vfs: VFSStructure): string | null {
+    const packageJson = findWorkspaceFile(vfs, '/package.json');
+    if (packageJson === null) return null;
+    const packageLock = findWorkspaceFile(vfs, '/package-lock.json') ?? '';
+    return hashString(`${packageJson}\n---lock---\n${packageLock}`);
+}
+
+function workspaceHasPackageLock(vfs: VFSStructure): boolean {
+    return findWorkspaceFile(vfs, '/package-lock.json') !== null;
+}
+
+async function openSnapshotDb(): Promise<IDBDatabase | null> {
+    if (typeof indexedDB === 'undefined') return null;
+
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(SNAPSHOT_DB_NAME, 1);
+
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(SNAPSHOT_STORE_NAME)) {
+                db.createObjectStore(SNAPSHOT_STORE_NAME, { keyPath: 'workspaceId' });
+            }
+        };
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error('Failed to open snapshot database.'));
+    });
+}
+
+async function loadWorkspaceSnapshot(workspaceId: string): Promise<WorkspaceSnapshotRecord | null> {
+    const db = await openSnapshotDb();
+    if (!db) return null;
+
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(SNAPSHOT_STORE_NAME, 'readonly');
+        const store = transaction.objectStore(SNAPSHOT_STORE_NAME);
+        const request = store.get(workspaceId);
+
+        request.onsuccess = () => {
+            const result = request.result as WorkspaceSnapshotRecord | undefined;
+            resolve(result ?? null);
+        };
+        request.onerror = () => reject(request.error ?? new Error('Failed to read workspace snapshot.'));
+        transaction.oncomplete = () => db.close();
+        transaction.onerror = () => db.close();
+        transaction.onabort = () => db.close();
+    });
+}
+
+async function saveWorkspaceSnapshot(record: WorkspaceSnapshotRecord): Promise<void> {
+    const db = await openSnapshotDb();
+    if (!db) return;
+
+    await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(SNAPSHOT_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(SNAPSHOT_STORE_NAME);
+        const request = store.put(record);
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error ?? new Error('Failed to save workspace snapshot.'));
+        transaction.oncomplete = () => db.close();
+        transaction.onerror = () => db.close();
+        transaction.onabort = () => db.close();
+    });
+}
+
+async function restoreWorkspaceSnapshot(
+    container: WebContainer,
+    state: WebContainerEntry,
+    workspaceId: string,
+    onEvent?: (event: TerminalStreamEvent) => void
+): Promise<void> {
+    if (state.snapshotRestoreAttempted) return;
+    state.snapshotRestoreAttempted = true;
+
+    try {
+        const record = await loadWorkspaceSnapshot(workspaceId);
+        if (!record) return;
+
+        await ensureDirectory(container, WORKSPACE_DIR);
+        await container.mount(record.snapshot, { mountPoint: WORKSPACE_DIR });
+        state.dependencyState = {
+            manifestHash: record.dependencyHash,
+            manager: record.manager,
+        };
+        onEvent?.({
+            type: 'status',
+            text: 'Restored cached WebContainer snapshot for this workspace.',
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to restore sandbox snapshot.';
+        onEvent?.({ type: 'error', text: message });
+    }
+}
+
+async function persistWorkspaceSnapshot(
+    container: WebContainer,
+    state: WebContainerEntry,
+    workspaceId: string,
+    onEvent: (event: TerminalStreamEvent) => void
+): Promise<void> {
+    if (!state.dependencyState) return;
+
+    try {
+        const snapshot = await container.export(WORKSPACE_DIR, { format: 'json' });
+        await saveWorkspaceSnapshot({
+            workspaceId,
+            snapshot,
+            dependencyHash: state.dependencyState.manifestHash,
+            manager: state.dependencyState.manager,
+            updatedAt: Date.now(),
+        });
+        onEvent({
+            type: 'status',
+            text: 'Updated sandbox snapshot cache after dependency install.',
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to persist sandbox snapshot.';
+        onEvent({ type: 'error', text: message });
     }
 }
 
@@ -207,10 +367,19 @@ async function runProcessWithStreaming(options: {
     };
 }
 
-async function getWebContainer(workspaceId: string): Promise<WebContainer> {
+async function getWebContainer(
+    workspaceId: string,
+    onEvent?: (event: TerminalStreamEvent) => void
+): Promise<WebContainer> {
     const state = getContainerState(workspaceId);
     if (!state.promise) {
-        state.promise = WebContainer.boot().catch((error) => {
+        state.promise = (async () => {
+            // Lifecycle decision: one WebContainer instance per workspace for the full browser session.
+            const container = await WebContainer.boot();
+            await ensureDirectory(container, WORKSPACE_DIR);
+            await restoreWorkspaceSnapshot(container, state, workspaceId, onEvent);
+            return container;
+        })().catch((error) => {
             state.promise = undefined;
             throw error;
         });
@@ -306,8 +475,11 @@ function isDevScript(parsed: ParsedCommand): boolean {
     return parsed.action === 'run' && (parsed.scriptName === 'dev' || parsed.scriptName === 'start');
 }
 
-function getInstallArgs(manager: PackageManager): string[] {
+function getInstallArgs(manager: PackageManager, hasPackageLock: boolean): string[] {
     if (manager === 'npm') {
+        if (hasPackageLock) {
+            return ['ci', '--ignore-scripts', '--prefer-offline', '--no-audit', '--no-fund'];
+        }
         return ['install', '--ignore-scripts', '--prefer-offline', '--no-audit', '--no-fund'];
     }
     // yarn and pnpm don't have exact --ignore-scripts equivalent, but we can try
@@ -318,6 +490,83 @@ function getInstallArgs(manager: PackageManager): string[] {
         return ['install', '--prefer-offline', '--ignore-scripts'];
     }
     return ['install', '--prefer-offline'];
+}
+
+async function ensureDependenciesReady(options: {
+    container: WebContainer;
+    state: WebContainerEntry;
+    workspaceId: string;
+    manager: PackageManager;
+    vfs: VFSStructure;
+    onEvent: (event: TerminalStreamEvent) => void;
+    signal?: AbortSignal;
+}): Promise<{ ok: true } | { ok: false; exitCode: number }> {
+    const { container, state, workspaceId, manager, vfs, onEvent, signal } = options;
+    const manifestHash = computeDependencyManifestHash(vfs);
+    if (!manifestHash) return { ok: true };
+
+    const hasPackageLock = workspaceHasPackageLock(vfs);
+    const hasNodeModules = await dependenciesInstalled(container);
+    const manifestChanged =
+        state.dependencyState?.manifestHash !== undefined &&
+        state.dependencyState.manifestHash !== manifestHash;
+
+    if (hasNodeModules && !manifestChanged) {
+        if (!state.dependencyState) {
+            state.dependencyState = { manifestHash, manager };
+        }
+        return { ok: true };
+    }
+
+    if (state.installPromise) {
+        onEvent({
+            type: 'status',
+            text: 'Dependency install already in progress for this workspace. Waiting for completion...',
+        });
+        const exitCode = await state.installPromise;
+        return exitCode === 0 ? { ok: true } : { ok: false, exitCode };
+    }
+
+    const installReason = !hasNodeModules
+        ? 'Dependencies missing in WebContainer. Installing once for this workspace...'
+        : 'Dependency manifests changed. Reinstalling dependencies...';
+
+    state.installPromise = (async () => {
+        await ensureDirectory(container, NPM_CACHE_DIR);
+        await ensureDirectory(container, YARN_CACHE_DIR);
+        await ensureDirectory(container, PNPM_STORE_DIR);
+
+        if (manager === 'npm' && !hasPackageLock) {
+            onEvent({
+                type: 'status',
+                text: 'package-lock.json not found. Falling back to npm install for this run.',
+            });
+        }
+
+        onEvent({ type: 'status', text: installReason });
+        const installResult = await runProcessWithStreaming({
+            container,
+            command: manager,
+            args: getInstallArgs(manager, hasPackageLock),
+            cwd: WORKSPACE_DIR,
+            onEvent,
+            signal,
+            timeoutMs: MAX_INSTALL_MS,
+            env: getInstallEnv(manager),
+        });
+
+        if (installResult.exitCode === 0) {
+            state.dependencyState = { manifestHash, manager };
+            await persistWorkspaceSnapshot(container, state, workspaceId, onEvent);
+        }
+
+        return installResult.exitCode;
+    })().finally(() => {
+        state.installPromise = undefined;
+    });
+
+    const exitCode = await state.installPromise;
+    return exitCode === 0 ? { ok: true } : { ok: false, exitCode };
 }
 
 function getInstallEnv(manager: PackageManager): Record<string, string> {
@@ -446,7 +695,7 @@ export async function runTerminalCommand(options: {
     }
 
     const containerState = getContainerState(resolvedWorkspaceId);
-    const container = await getWebContainer(resolvedWorkspaceId);
+    const container = await getWebContainer(resolvedWorkspaceId, onEvent);
 
     onEvent({ type: 'status', text: 'Booting sandboxed environment...' });
     await syncWorkspace(container, vfs, resolvedWorkspaceId);
@@ -468,33 +717,22 @@ export async function runTerminalCommand(options: {
     const timeoutMs = devScript ? MAX_DEV_SERVER_MS : MAX_EXECUTION_MS;
 
     if (parsed.action === 'run') {
-        const hasDependencies = await dependenciesInstalled(container);
-        if (!hasDependencies) {
-            await ensureDirectory(container, NPM_CACHE_DIR);
-            await ensureDirectory(container, YARN_CACHE_DIR);
-            await ensureDirectory(container, PNPM_STORE_DIR);
-            onEvent({
-                type: 'status',
-                text: 'Dependencies missing. Installing in sandbox before running the script...',
+        const dependencyResult = await ensureDependenciesReady({
+            container,
+            state: containerState,
+            workspaceId: resolvedWorkspaceId,
+            manager: parsed.manager,
+            vfs,
+            onEvent,
+            signal,
+        });
+        if (!dependencyResult.ok) {
+            onExit({
+                type: 'exit',
+                exitCode: dependencyResult.exitCode,
+                durationMs: Date.now() - startedAt,
             });
-            const installResult = await runProcessWithStreaming({
-                container,
-                command: parsed.manager,
-                args: getInstallArgs(parsed.manager),
-                cwd: WORKSPACE_DIR,
-                onEvent,
-                signal,
-                timeoutMs: MAX_INSTALL_MS,
-                env: getInstallEnv(parsed.manager),
-            });
-            if (installResult.exitCode !== 0) {
-                onExit({
-                    type: 'exit',
-                    exitCode: installResult.exitCode,
-                    durationMs: Date.now() - startedAt,
-                });
-                return;
-            }
+            return;
         }
     }
 
@@ -534,4 +772,3 @@ export async function runTerminalCommand(options: {
         durationMs,
     });
 }
-

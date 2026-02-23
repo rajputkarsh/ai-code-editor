@@ -6,8 +6,8 @@
  */
 
 import type { VFSStructure } from '@/lib/workspace/types';
-import { streamTerminalExecution } from '@/lib/terminal/client';
 import type { TerminalStreamEvent } from '@/lib/terminal/types';
+import { runTerminalCommand } from '@/lib/terminal/webcontainer';
 
 export interface DevServerInfo {
   url: string;
@@ -114,9 +114,45 @@ export class DevServerManager {
         }
       };
 
-      streamTerminalExecution({
+      const handleExit = (event: TerminalStreamEvent & { type: 'exit' }) => {
+        // Exit code 124 is used for long-running dev servers that are still active
+        // This means the process is running but hit a timeout (which is expected for dev servers)
+        if (event.exitCode === 124) {
+          // If server is already running, this is fine
+          if (serverInfo.isRunning) {
+            return;
+          }
+          // If server isn't running yet, it might still be starting
+          // Don't reject immediately - wait a bit more
+          if (!resolved) {
+            // Extend timeout a bit more
+            clearTimeoutSafe();
+            timeoutId = setTimeout(() => {
+              if (!resolved && !serverInfo.isRunning) {
+                resolved = true;
+                timeoutId = null;
+                reject(new Error('Dev server process timed out before becoming ready. Check terminal for details.'));
+              }
+            }, 30000);
+          }
+          return;
+        }
+        // For other exit codes, only reject if server wasn't marked as running
+        if (!resolved && !serverInfo.isRunning && event.exitCode !== 0) {
+          clearTimeoutSafe();
+          resolved = true;
+          serverInfo.isRunning = false;
+          reject(new Error(`Dev server exited with code ${event.exitCode}`));
+        }
+      };
+
+      // Use the client-side WebContainer runner directly so preview and terminal share
+      // the same workspace-scoped container lifecycle and dependency cache.
+      void runTerminalCommand({
         command,
+        vfs,
         signal: abortController.signal,
+        workspaceId,
         onEvent: (event: TerminalStreamEvent) => {
           if (event.type === 'status' || event.type === 'output' || event.type === 'error') {
             this.options.onStatusChange?.(event.text);
@@ -236,61 +272,9 @@ export class DevServerManager {
               }
             }
           }
-
-          // Handle exit events - for dev servers, exit code 124 means it's still running
-          if (event.type === 'exit') {
-            // Exit code 124 is used for long-running dev servers that are still active
-            // This means the process is running but hit a timeout (which is expected for dev servers)
-            if (event.exitCode === 124) {
-              // If server is already running, this is fine
-              if (serverInfo.isRunning) {
-                return;
-              }
-              // If server isn't running yet, it might still be starting
-              // Don't reject immediately - wait a bit more
-              if (!resolved) {
-                // Extend timeout a bit more
-                clearTimeoutSafe();
-                timeoutId = setTimeout(() => {
-                  if (!resolved && !serverInfo.isRunning) {
-                    resolved = true;
-                    timeoutId = null;
-                    reject(new Error('Dev server process timed out before becoming ready. Check terminal for details.'));
-                  }
-                }, 30000);
-              }
-              return;
-            }
-            // For other exit codes, only reject if server wasn't marked as running
-            if (!resolved && !serverInfo.isRunning && event.exitCode !== 0) {
-              clearTimeoutSafe();
-              resolved = true;
-              serverInfo.isRunning = false;
-              reject(new Error(`Dev server exited with code ${event.exitCode}`));
-            }
-          }
         },
-        onDone: () => {
-          // Stream ended - this is normal for long-running processes
-          // For dev servers, the stream ends but the server continues running
-          // Don't reject if server is already running
-          if (serverInfo.isRunning) {
-            // Server is running, stream ending is expected
-            return;
-          }
-          // Only reject if we never detected the server as ready
-          // Give it a bit more time - sometimes the ready message comes right before stream ends
-          if (!resolved) {
-            // Wait a bit longer to see if server becomes ready
-            setTimeout(() => {
-              if (!resolved && !serverInfo.isRunning) {
-                clearTimeoutSafe();
-                resolved = true;
-                serverInfo.isRunning = false;
-                reject(new Error('Dev server stream ended before server was ready. The server may still be starting - check the terminal output for details.'));
-              }
-            }, 5000);
-          }
+        onExit: (event) => {
+          handleExit(event);
         },
       }).catch((error) => {
         if (!resolved) {
