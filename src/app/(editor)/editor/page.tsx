@@ -193,7 +193,7 @@ export default function EditorPage() {
     const { addMessage, setContextInfo } = useAIChatState();
     const { activeTabId, tabs } = useEditorState();
     const { files, updateFileContent, createFile, createFolder, rootId } = useFileSystem();
-    const { createNewWorkspace, saveWorkspace, isLoading, vfs, workspace } = useWorkspace();
+    const { createNewWorkspace, saveWorkspace, isLoading, vfs, workspace, dirtyFiles } = useWorkspace();
     const { selection, hasSelection } = useSelectionState();
     const { setLoadingAction, setLoadingExplanation, addPromptToHistory } = useInlineAI();
     const toast = useToast();
@@ -270,10 +270,11 @@ export default function EditorPage() {
         }
     }, [isPreviewOpen, previewState.previewUrl, previewState.projectType, vfs]);
 
-    // Debounced auto-reload on workspace file edits.
+    // Debounced auto-reload on dirty file changes (same signal path as autosave/DB saves).
     React.useEffect(() => {
         if (!isPreviewOpen || !vfs) return;
         if (!['static', 'react', 'vite'].includes(previewState.projectType)) return;
+        if (dirtyFiles.size === 0) return;
 
         if (fileChangeReloadTimerRef.current) {
             clearTimeout(fileChangeReloadTimerRef.current);
@@ -286,7 +287,7 @@ export default function EditorPage() {
             );
 
             if (isDevServerProject && hasDevServerUrl) {
-                console.info('[Preview] File change detected → reloading iframe');
+                console.info('[Preview] Dirty file change detected → reloading iframe');
                 setPreviewReloadNonce((prev) => prev + 1);
                 return;
             }
@@ -295,7 +296,7 @@ export default function EditorPage() {
                 previewManagerRef.current &&
                 (previewState.projectType === 'static' || previewState.projectType === 'react')
             ) {
-                console.info('[Preview] File change detected → reloading iframe');
+                console.info('[Preview] Dirty file change detected → reloading iframe');
                 previewManagerRef.current.updateVFS(vfs.getStructure());
             }
         }, 400);
@@ -306,7 +307,7 @@ export default function EditorPage() {
                 fileChangeReloadTimerRef.current = null;
             }
         };
-    }, [files, isPreviewOpen, previewState.projectType, previewState.previewUrl, vfs]);
+    }, [dirtyFiles, isPreviewOpen, previewState.projectType, previewState.previewUrl, vfs]);
 
     /**
      * Handle template selection from AI chat panel
@@ -935,3 +936,4 @@ export default function EditorPage() {
         </>
     );
 }
+
