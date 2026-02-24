@@ -278,6 +278,11 @@ export default function EditorPage() {
     const handlePreviewRefresh = React.useCallback(() => {
         if (!isPreviewOpen || !previewState.previewUrl) return;
         console.info('[Preview] Manual refresh triggered');
+        if (previewState.projectType === 'vite' && previewManagerRef.current && vfs) {
+            previewManagerRef.current.updateVFS(vfs.getStructure());
+            setPreviewReloadNonce((prev) => prev + 1);
+            return;
+        }
         setPreviewReloadNonce((prev) => prev + 1);
 
         // For blob/static previews, regenerate preview content as part of refresh.
@@ -307,7 +312,7 @@ export default function EditorPage() {
             );
 
             if (isDevServerProject && hasDevServerUrl) {
-                console.info('[Preview] Dirty file change detected → reloading iframe');
+                previewManagerRef.current?.updateVFS(vfs.getStructure());
                 setPreviewReloadNonce((prev) => prev + 1);
                 return;
             }
@@ -956,4 +961,5 @@ export default function EditorPage() {
         </>
     );
 }
+
 

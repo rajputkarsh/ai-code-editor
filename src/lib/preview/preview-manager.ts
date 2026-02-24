@@ -13,6 +13,7 @@
 
 import type { VFSStructure, VFSNode } from '@/lib/workspace/types';
 import { DevServerManager, type DevServerInfo } from './dev-server-manager';
+import { syncWorkspaceToWebContainer } from '@/lib/terminal/webcontainer';
 
 export type PreviewProjectType = 
   | 'static'           // Static HTML/CSS/JS
@@ -400,6 +401,16 @@ export class PreviewManager {
     // Check if server is already running
     const existingUrl = this.devServerManager.getServerUrl(projectType, this.options.workspaceId);
     if (existingUrl) {
+      // Keep running dev server filesystem aligned with the latest editor VFS.
+      await syncWorkspaceToWebContainer({
+        vfs,
+        workspaceId: this.options.workspaceId,
+        onEvent: (event) => {
+          if (event.type === 'error') {
+            this.options.onStatusChange?.(event.text);
+          }
+        },
+      });
       console.info('[Preview] Reusing existing dev server URL', {
         projectType,
         workspaceId: this.options.workspaceId,

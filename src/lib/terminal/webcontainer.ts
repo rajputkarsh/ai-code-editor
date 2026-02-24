@@ -731,15 +731,6 @@ function getRunEnv(isDev: boolean, port?: number): Record<string, string> | unde
         BROWSER: 'none',
         PORT: port ? String(port) : '3001',
         HOSTNAME: '0.0.0.0',
-        // Disable HMR and file watching
-        WATCHPACK_POLLING: 'false',
-        CHOKIDAR_USEPOLLING: 'false',
-        CHOKIDAR_INTERVAL: '0',
-        CHOKIDAR_IGNORED: '**',
-        // Disable Next.js HMR (if supported)
-        NEXT_DISABLE_HMR: '1',
-        // Disable file watching - ignore all file changes
-        WATCHPACK_IGNORED: '**',
     };
 }
 
@@ -914,4 +905,31 @@ export async function runTerminalCommand(options: {
         exitCode: result.exitCode,
         durationMs,
     });
+}
+
+/**
+ * Sync the latest workspace VFS into an existing WebContainer instance.
+ * Used by preview to keep long-running dev servers in sync with editor changes.
+ */
+export async function syncWorkspaceToWebContainer(options: {
+    vfs: VFSStructure;
+    workspaceId?: string;
+    onEvent?: (event: TerminalStreamEvent) => void;
+}): Promise<void> {
+    const { vfs, workspaceId, onEvent } = options;
+    const resolvedWorkspaceId = workspaceId ?? 'default';
+    const state = getContainerState(resolvedWorkspaceId);
+    const container = await getWebContainer(resolvedWorkspaceId, onEvent);
+
+    if (!state.snapshotRestored) {
+        await mountInitialWorkspaceIfNeeded({
+            container,
+            state,
+            vfs,
+            workspaceId: resolvedWorkspaceId,
+            onEvent: onEvent ?? (() => {}),
+        });
+    }
+
+    await syncWorkspace(container, vfs, resolvedWorkspaceId);
 }
