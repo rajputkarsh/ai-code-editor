@@ -150,6 +150,7 @@ export async function createWorkspace(
         teamId: options?.teamId ?? null,
         name: workspace.metadata.name,
         source: workspace.metadata.source,
+        projectType: workspace.metadata.projectType ?? null,
         vfsData: serializeVFS(workspace.vfs),
         editorStateData: workspace.editorState ? serializeEditorState(workspace.editorState) : null,
         githubMetadata: workspace.metadata.githubMetadata || null,
@@ -289,6 +290,7 @@ export async function loadWorkspace(
         name: row.name,
         source: row.source as 'zip' | 'github' | 'manual',
         type: getWorkspaceTypeFromSource(row.source as WorkspaceSource),
+        projectType: (row.projectType as Workspace['metadata']['projectType']) ?? undefined,
         createdAt: row.createdAt,
         lastOpenedAt: row.lastOpenedAt,
         userId: row.userId,
@@ -317,6 +319,7 @@ export async function listWorkspaces(userId: string): Promise<Array<{
   id: string;
   name: string;
   source: string;
+  projectType?: Workspace['metadata']['projectType'];
   type: WorkspaceType;
   teamId?: string | null;
   lastOpenedAt: Date;
@@ -327,6 +330,10 @@ export async function listWorkspaces(userId: string): Promise<Array<{
 
     return result.map((row) => ({
       ...row,
+      projectType:
+        row.projectType === 'vite-react'
+          ? 'vite-react'
+          : undefined,
       type: getWorkspaceTypeFromSource(row.source as WorkspaceSource),
     }));
   } catch (error) {

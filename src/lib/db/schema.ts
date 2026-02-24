@@ -38,6 +38,7 @@ export const workspaces = pgTable('workspaces', {
   teamId: uuid('team_id'),
   name: text('name').notNull(),
   source: text('source').notNull(), // 'zip' | 'github' | 'manual'
+  projectType: text('project_type'),
   
   // File system structure (VFSStructure) stored as JSONB
   vfsData: jsonb('vfs_data').notNull(),

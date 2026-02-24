@@ -12,13 +12,21 @@ import {
   activateWorkspaceAPI,
 } from '@/lib/workspace/api-client';
 import { createAutosaveManager, type AutosaveManager, type AutosaveState } from '@/lib/workspace/autosave';
-import type { EditorState, WorkspaceType, WorkspaceSource, GitHubMetadata } from '@/lib/workspace/types';
+import type {
+  EditorState,
+  WorkspaceType,
+  WorkspaceSource,
+  GitHubMetadata,
+  WorkspaceTemplateType,
+  WorkspaceProjectType,
+} from '@/lib/workspace/types';
 
 interface WorkspaceSummary {
   id: string;
   name: string;
   type: WorkspaceType;
   source: WorkspaceSource;
+  projectType?: WorkspaceProjectType;
   teamId?: string | null;
   createdAt: Date;
   lastOpenedAt: Date;
@@ -46,6 +54,7 @@ interface WorkspaceContextType {
       type?: WorkspaceType;
       source?: WorkspaceSource;
       githubMetadata?: GitHubMetadata;
+      template?: WorkspaceTemplateType;
     }
   ) => Promise<{
     workspace: Workspace;
@@ -273,6 +282,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           id: currentWorkspace.metadata.id,
           name: currentWorkspace.metadata.name,
           type: currentWorkspace.metadata.type,
+          projectType: currentWorkspace.metadata.projectType,
           source: currentWorkspace.metadata.source,
           vfs: currentVfsStructure,
           editorState: editorState,
@@ -397,6 +407,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       type?: WorkspaceType;
       source?: WorkspaceSource;
       githubMetadata?: GitHubMetadata;
+      template?: WorkspaceTemplateType;
     }
   ) => {
     const resolvedType = options?.type ?? 'cloud';
@@ -406,28 +417,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       type: resolvedType,
       source: resolvedSource,
       githubMetadata: options?.githubMetadata,
+      template: options?.template,
     });
-    setWorkspace(newWorkspace);
-    setActiveWorkspaceId(newWorkspace.metadata.id);
-    
-    const vfsInstance = new VirtualFileSystem(newWorkspace.vfs);
-    setVfs(vfsInstance);
-    setError(null);
-    workspaceRef.current = newWorkspace;
-    vfsRef.current = vfsInstance;
-    initAutosaveManager(newWorkspace, vfsInstance);
-
-    setWorkspaces((prev) => [
-      {
-        id: newWorkspace.metadata.id,
-        name: newWorkspace.metadata.name,
-        type: newWorkspace.metadata.type,
-        source: newWorkspace.metadata.source,
-        createdAt: newWorkspace.metadata.createdAt,
-        lastOpenedAt: newWorkspace.metadata.lastOpenedAt,
-      },
-      ...prev.filter((ws) => ws.id !== newWorkspace.metadata.id),
-    ]);
     
     // Save new workspace to server (optional)
     if (options?.save !== false) {
@@ -436,6 +427,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           id: newWorkspace.metadata.id,
           name: newWorkspace.metadata.name,
           type: newWorkspace.metadata.type,
+          projectType: newWorkspace.metadata.projectType,
           source: newWorkspace.metadata.source,
           vfs: newWorkspace.vfs,
           githubMetadata: newWorkspace.metadata.githubMetadata,
@@ -449,9 +441,33 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         await refreshWorkspaces();
         console.log('[Phase 2.5] Created new workspace:', newWorkspace.metadata.name);
       } catch (saveErr) {
-        console.warn('[Phase 2.5] Failed to save new workspace (will try on first edit):', saveErr);
+        setError(saveErr instanceof Error ? saveErr.message : 'Failed to create workspace');
+        throw saveErr instanceof Error ? saveErr : new Error('Failed to create workspace');
       }
     }
+
+    setWorkspace(newWorkspace);
+    setActiveWorkspaceId(newWorkspace.metadata.id);
+
+    const vfsInstance = new VirtualFileSystem(newWorkspace.vfs);
+    setVfs(vfsInstance);
+    setError(null);
+    workspaceRef.current = newWorkspace;
+    vfsRef.current = vfsInstance;
+    initAutosaveManager(newWorkspace, vfsInstance);
+
+    setWorkspaces((prev) => [
+      {
+        id: newWorkspace.metadata.id,
+        name: newWorkspace.metadata.name,
+        type: newWorkspace.metadata.type,
+        source: newWorkspace.metadata.source,
+        projectType: newWorkspace.metadata.projectType,
+        createdAt: newWorkspace.metadata.createdAt,
+        lastOpenedAt: newWorkspace.metadata.lastOpenedAt,
+      },
+      ...prev.filter((ws) => ws.id !== newWorkspace.metadata.id),
+    ]);
 
     return { workspace: newWorkspace, vfs: vfsInstance };
   }, [initAutosaveManager, refreshWorkspaces]);

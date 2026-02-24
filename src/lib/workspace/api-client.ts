@@ -7,7 +7,15 @@
  * All methods automatically include authentication via cookies (Clerk session).
  */
 
-import type { Workspace, VFSStructure, EditorState, WorkspaceType, WorkspaceSource, GitHubMetadata } from './types';
+import type {
+  Workspace,
+  VFSStructure,
+  EditorState,
+  WorkspaceType,
+  WorkspaceSource,
+  GitHubMetadata,
+  WorkspaceProjectType,
+} from './types';
 
 const API_BASE = '/api/workspaces';
 
@@ -18,6 +26,7 @@ export async function createWorkspaceAPI(workspace: {
   id: string;
   name: string;
   type: WorkspaceType;
+  projectType?: WorkspaceProjectType;
   teamId?: string;
   source?: WorkspaceSource;
   vfs: VFSStructure;
@@ -142,6 +151,7 @@ export async function listWorkspacesAPI(): Promise<{
     id: string;
     name: string;
     source: WorkspaceSource;
+    projectType?: WorkspaceProjectType;
     type: WorkspaceType;
     teamId?: string | null;
     lastOpenedAt: Date;

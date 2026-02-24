@@ -46,6 +46,7 @@ const createWorkspaceSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(255),
   teamId: z.string().uuid().optional(),
+  projectType: z.enum(['vite-react']).optional(),
   type: z.enum(['cloud', 'github']).optional(),
   source: z.enum(['zip', 'github', 'manual']).optional(),
   vfs: z.object({
@@ -165,6 +166,7 @@ workspaceApp.post(
           name: data.name,
           source: resolvedSource,
           type: resolvedType,
+          projectType: data.projectType,
           createdAt: new Date(),
           lastOpenedAt: new Date(),
           userId,

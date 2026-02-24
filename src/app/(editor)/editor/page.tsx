@@ -197,6 +197,26 @@ export default function EditorPage() {
     const { selection, hasSelection } = useSelectionState();
     const { setLoadingAction, setLoadingExplanation, addPromptToHistory } = useInlineAI();
     const toast = useToast();
+
+    // Auto-open preview for newly created template projects.
+    React.useEffect(() => {
+        const onTemplateWorkspaceCreated = (event: Event) => {
+            const customEvent = event as CustomEvent<{ workspaceId?: string; projectType?: string }>;
+            const detail = customEvent.detail;
+            if (!detail) return;
+            if (detail.projectType !== 'vite-react') return;
+
+            if (previewManagerRef.current) {
+                previewManagerRef.current.enable();
+                setIsPreviewOpen(true);
+            }
+        };
+
+        window.addEventListener('workspace:template-created', onTemplateWorkspaceCreated as EventListener);
+        return () => {
+            window.removeEventListener('workspace:template-created', onTemplateWorkspaceCreated as EventListener);
+        };
+    }, []);
     
     // Initialize preview manager
     React.useEffect(() => {

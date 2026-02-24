@@ -12,6 +12,6 @@ export {
   renameWorkspace as renameWorkspaceLocal,
 } from './workspace-factory';
 export * from './sample-project';
+export * from './templates';
 export * from './persistence';
 export * from './api-client';
-

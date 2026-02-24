@@ -22,6 +22,8 @@ export interface VFSStructure {
 
 export type WorkspaceSource = 'zip' | 'github' | 'manual';
 export type WorkspaceType = 'cloud' | 'github';
+export type WorkspaceProjectType = 'vite-react';
+export type WorkspaceTemplateType = 'react-vite';
 
 /**
  * GitHub repository metadata for GitHub-linked workspaces
@@ -52,6 +54,7 @@ export interface WorkspaceMetadata {
   lastOpenedAt: Date;
   userId?: string; // Owner of the workspace (for cloud persistence)
   teamId?: string; // Team owner when workspace is collaborative
+  projectType?: WorkspaceProjectType;
   githubMetadata?: GitHubMetadata; // Only present for GitHub-linked workspaces
 }
 
@@ -93,6 +96,7 @@ export interface SerializedWorkspace {
   userId: string;
   name: string;
   source: WorkspaceSource;
+  projectType?: WorkspaceProjectType;
   vfsData: string; // JSON string of VFSStructure
   editorStateData: string | null; // JSON string of EditorState
   createdAt: string; // ISO date string

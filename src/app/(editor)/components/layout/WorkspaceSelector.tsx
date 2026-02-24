@@ -15,6 +15,7 @@ import {
   type TeamMember,
   type TeamRole,
 } from '@/lib/collaboration/api-client';
+import type { WorkspaceTemplateType } from '@/lib/workspace/types';
 
 function formatWorkspaceType(type: 'cloud' | 'github') {
   return type === 'github' ? 'GitHub' : 'Cloud';
@@ -38,6 +39,7 @@ export function WorkspaceSelector() {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isCollaborateOpen, setIsCollaborateOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
+  const [templateType, setTemplateType] = useState<WorkspaceTemplateType>('react-vite');
   const [teams, setTeams] = useState<TeamListItem[]>([]);
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [teamName, setTeamName] = useState('');
@@ -61,7 +63,8 @@ export function WorkspaceSelector() {
   }, []);
 
   const handleCreate = () => {
-    setWorkspaceName('New Project');
+    setWorkspaceName('My React App');
+    setTemplateType('react-vite');
     setIsCreateOpen(true);
   };
 
@@ -126,7 +129,7 @@ export function WorkspaceSelector() {
               onClick={handleCreate}
               className="text-xs text-blue-400 hover:text-blue-300"
             >
-              New
+              New Project
             </button>
           </div>
 
@@ -193,7 +196,7 @@ export function WorkspaceSelector() {
       <Modal
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
-        title="Create workspace"
+        title="Create New Project"
         footer={
           <>
             <button
@@ -206,9 +209,25 @@ export function WorkspaceSelector() {
               className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-500"
               onClick={async () => {
                 if (!workspaceName.trim()) return;
-                await createNewWorkspace(workspaceName.trim());
-                setIsCreateOpen(false);
-                setIsOpen(false);
+                try {
+                  const result = await createNewWorkspace(workspaceName.trim(), {
+                    template: templateType,
+                  });
+                  if (templateType === 'react-vite') {
+                    window.dispatchEvent(
+                      new CustomEvent('workspace:template-created', {
+                        detail: {
+                          workspaceId: result.workspace.metadata.id,
+                          projectType: result.workspace.metadata.projectType,
+                        },
+                      })
+                    );
+                  }
+                  setIsCreateOpen(false);
+                  setIsOpen(false);
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : 'Failed to create project');
+                }
               }}
             >
               Create
@@ -216,13 +235,21 @@ export function WorkspaceSelector() {
           </>
         }
       >
-        <label className="block text-xs text-neutral-400 mb-2">Workspace name</label>
+        <label className="block text-xs text-neutral-400 mb-2">Project name</label>
         <input
           autoFocus
           value={workspaceName}
           onChange={(event) => setWorkspaceName(event.target.value)}
           className="w-full rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2 text-sm text-neutral-200 focus:outline-none focus:border-blue-500"
         />
+        <label className="block text-xs text-neutral-400 mt-4 mb-2">Template</label>
+        <select
+          value={templateType}
+          onChange={(event) => setTemplateType(event.target.value as WorkspaceTemplateType)}
+          className="w-full rounded-md bg-neutral-900 border border-neutral-700 px-3 py-2 text-sm text-neutral-200 focus:outline-none focus:border-blue-500"
+        >
+          <option value="react-vite">React (Vite)</option>
+        </select>
       </Modal>
 
       <Modal

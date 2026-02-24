@@ -50,6 +50,20 @@
       "when": 1771959333345,
       "tag": "0006_sleepy_thundra",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1772040000000,
+      "tag": "0007_vite_template_project_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1771961145933,
+      "tag": "0008_steep_ultragirl",
+      "breakpoints": true
     }
   ]
 }

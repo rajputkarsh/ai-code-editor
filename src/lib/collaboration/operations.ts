@@ -455,6 +455,7 @@ export async function listAccessibleWorkspaces(userId: string) {
       id: workspacesTable.id,
       name: workspacesTable.name,
       source: workspacesTable.source,
+      projectType: workspacesTable.projectType,
       teamId: workspacesTable.teamId,
       userId: workspacesTable.userId,
       lastOpenedAt: workspacesTable.lastOpenedAt,
