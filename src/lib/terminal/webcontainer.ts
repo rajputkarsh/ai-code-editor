@@ -649,7 +649,7 @@ async function ensureDependenciesReady(options: {
         }
 
         onEvent({ type: 'status', text: installReason });
-        const installResult = await runProcessWithStreaming({
+        let installResult = await runProcessWithStreaming({
             container,
             command: manager,
             args: getInstallArgs(manager, hasPackageLock),
@@ -659,6 +659,24 @@ async function ensureDependenciesReady(options: {
             timeoutMs: MAX_INSTALL_MS,
             env: getInstallEnv(manager),
         });
+
+        // If lockfile is stale/corrupt, fall back to npm install so preview can still boot.
+        if (manager === 'npm' && hasPackageLock && installResult.exitCode !== 0) {
+            onEvent({
+                type: 'status',
+                text: 'npm ci failed. Falling back to npm install for recovery.',
+            });
+            installResult = await runProcessWithStreaming({
+                container,
+                command: manager,
+                args: getInstallArgs(manager, false),
+                cwd: WORKSPACE_DIR,
+                onEvent,
+                signal,
+                timeoutMs: MAX_INSTALL_MS,
+                env: getInstallEnv(manager),
+            });
+        }
 
         if (installResult.exitCode === 0) {
             state.dependencyState = { manifestHash, manager };

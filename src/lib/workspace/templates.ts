@@ -1,5 +1,6 @@
 import { VirtualFileSystem } from './vfs';
 import type { WorkspaceProjectType, WorkspaceTemplateType } from './types';
+import reactVitePackageLock from './template-assets/react-vite-package-lock.json';
 
 export interface TemplateInitializationResult {
   projectType: WorkspaceProjectType;
@@ -31,6 +32,23 @@ function createViteReactPackageJson(projectName: string): string {
   );
 }
 
+function createViteReactPackageLock(projectName: string): string {
+  const lock = JSON.parse(JSON.stringify(reactVitePackageLock)) as {
+    name?: string;
+    packages?: {
+      [key: string]: {
+        name?: string;
+      };
+    };
+  };
+  const normalizedName = projectName.toLowerCase().replace(/\s+/g, '-');
+  lock.name = normalizedName;
+  if (lock.packages?.['']) {
+    lock.packages[''].name = normalizedName;
+  }
+  return JSON.stringify(lock, null, 2);
+}
+
 /**
  * Initializes template files in the current workspace VFS.
  * Kept modular so future templates can be added without changing callers.
@@ -46,6 +64,7 @@ export function initializeWorkspaceTemplate(
     const srcId = vfs.createFolder(rootId, 'src');
 
     vfs.createFile(rootId, 'package.json', createViteReactPackageJson(projectName));
+    vfs.createFile(rootId, 'package-lock.json', createViteReactPackageLock(projectName));
     vfs.createFile(
       rootId,
       'vite.config.ts',
