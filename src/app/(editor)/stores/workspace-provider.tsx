@@ -19,6 +19,7 @@ interface WorkspaceSummary {
   name: string;
   type: WorkspaceType;
   source: WorkspaceSource;
+  teamId?: string | null;
   createdAt: Date;
   lastOpenedAt: Date;
 }
@@ -659,4 +660,3 @@ export function useWorkspace() {
   }
   return context;
 }
-

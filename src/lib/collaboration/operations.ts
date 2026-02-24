@@ -470,3 +470,27 @@ export async function listAccessibleWorkspaces(userId: string) {
     .where(or(eq(workspacesTable.userId, userId), inArray(workspacesTable.teamId, teamIds)))
     .orderBy(desc(workspacesTable.lastOpenedAt));
 }
+
+export async function assignWorkspaceToTeam(
+  userId: string,
+  workspaceId: string,
+  teamId: string | null
+): Promise<void> {
+  const db = getDb();
+  if (!db) throw new Error('Database not configured');
+
+  const access = await resolveWorkspaceAccess(userId, workspaceId);
+  assertCanModifyWorkspace(access);
+
+  if (teamId) {
+    await ensureTeamRole(userId, teamId, 'EDITOR');
+  }
+
+  await db
+    .update(workspacesTable)
+    .set({
+      teamId,
+      updatedAt: new Date(),
+    })
+    .where(eq(workspacesTable.id, workspaceId));
+}

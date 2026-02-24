@@ -11,6 +11,7 @@ import {
   createTeamPrompt,
   deleteTeamPrompt,
   inviteMember,
+  assignWorkspaceToTeam,
   listAIAuditLogs,
   listMembers,
   listTeamPrompts,
@@ -41,6 +42,10 @@ const updateRoleSchema = z.object({
 const createCommentSchema = z.object({
   fileId: z.string().min(1),
   content: z.string().min(1),
+});
+
+const assignWorkspaceTeamSchema = z.object({
+  teamId: z.string().uuid().nullable(),
 });
 
 const teamPromptSchema = z.object({
@@ -128,6 +133,18 @@ collaborationApp.delete('/teams/:teamId/members/:memberUserId', async (c) => {
   await removeMember(userId, teamId, memberUserId);
   return c.json({ success: true });
 });
+
+collaborationApp.patch(
+  '/workspaces/:workspaceId/team',
+  zValidator('json', assignWorkspaceTeamSchema),
+  async (c) => {
+    const userId = getUserId(c);
+    const workspaceId = c.req.param('workspaceId');
+    const { teamId } = c.req.valid('json');
+    await assignWorkspaceToTeam(userId, workspaceId, teamId);
+    return c.json({ success: true });
+  }
+);
 
 collaborationApp.get('/workspaces/:workspaceId/comments', async (c) => {
   const userId = getUserId(c);

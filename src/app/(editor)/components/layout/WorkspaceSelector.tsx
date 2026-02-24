@@ -1,9 +1,20 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Folder, Github } from 'lucide-react';
+import { ChevronDown, Folder, Github, Users } from 'lucide-react';
 import { useWorkspace } from '../../stores/workspace-provider';
 import { Modal } from '@/components/ui/Modal';
+import { useToast } from '@/components/ui/Toast';
+import {
+  assignWorkspaceTeamAPI,
+  createTeamAPI,
+  inviteTeamMemberAPI,
+  listTeamMembersAPI,
+  listTeamsAPI,
+  type TeamListItem,
+  type TeamMember,
+  type TeamRole,
+} from '@/lib/collaboration/api-client';
 
 function formatWorkspaceType(type: 'cloud' | 'github') {
   return type === 'github' ? 'GitHub' : 'Cloud';
@@ -14,16 +25,26 @@ export function WorkspaceSelector() {
     workspace,
     workspaces,
     activeWorkspaceId,
+    refreshWorkspaces,
     switchWorkspace,
     createNewWorkspace,
     renameWorkspace,
     deleteWorkspace,
   } = useWorkspace();
+  const toast = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isCollaborateOpen, setIsCollaborateOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
+  const [teams, setTeams] = useState<TeamListItem[]>([]);
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [teamName, setTeamName] = useState('');
+  const [selectedTeamId, setSelectedTeamId] = useState('');
+  const [inviteUserId, setInviteUserId] = useState('');
+  const [inviteRole, setInviteRole] = useState<TeamRole>('EDITOR');
+  const [isCollabLoading, setIsCollabLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -54,6 +75,32 @@ export function WorkspaceSelector() {
     if (!workspace) return;
     setIsDeleteOpen(true);
   };
+
+  const loadTeams = async () => {
+    const nextTeams = await listTeamsAPI();
+    setTeams(nextTeams);
+    const preferredTeamId = workspace?.metadata.teamId ?? nextTeams[0]?.id ?? '';
+    setSelectedTeamId((prev) => prev || preferredTeamId);
+  };
+
+  const loadMembers = async (teamId: string) => {
+    if (!teamId) {
+      setMembers([]);
+      return;
+    }
+    const nextMembers = await listTeamMembersAPI(teamId);
+    setMembers(nextMembers);
+  };
+
+  useEffect(() => {
+    if (!isCollaborateOpen) return;
+    void loadTeams();
+  }, [isCollaborateOpen, workspace?.metadata.teamId]);
+
+  useEffect(() => {
+    if (!isCollaborateOpen) return;
+    void loadMembers(selectedTeamId);
+  }, [isCollaborateOpen, selectedTeamId]);
 
   const activeLabel = workspace?.metadata.name ?? 'Workspace';
   const activeType = workspace?.metadata.type ?? 'cloud';
@@ -115,6 +162,16 @@ export function WorkspaceSelector() {
           </div>
 
           <div className="border-t border-neutral-800 px-3 py-2 flex items-center justify-between text-xs">
+            <button
+              onClick={() => {
+                setIsCollaborateOpen(true);
+                setIsOpen(false);
+              }}
+              className="text-blue-400 hover:text-blue-300"
+              disabled={!workspace}
+            >
+              Collaborate
+            </button>
             <button
               onClick={handleRename}
               className="text-neutral-400 hover:text-neutral-200"
@@ -237,7 +294,154 @@ export function WorkspaceSelector() {
           Delete workspace <span className="text-white">{workspace?.metadata.name}</span>? This cannot be undone.
         </p>
       </Modal>
+
+      <Modal
+        isOpen={isCollaborateOpen}
+        onClose={() => setIsCollaborateOpen(false)}
+        title="Collaboration"
+        footer={
+          <button
+            className="px-3 py-1.5 text-xs rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800"
+            onClick={() => setIsCollaborateOpen(false)}
+          >
+            Close
+          </button>
+        }
+      >
+        <div className="space-y-4 text-sm text-neutral-300">
+          <div className="rounded-md border border-neutral-800 p-3 bg-neutral-900/60">
+            <div className="flex items-center gap-2 text-xs text-neutral-400 mb-2">
+              <Users className="w-3 h-3" />
+              Team
+            </div>
+            <div className="flex gap-2">
+              <select
+                value={selectedTeamId}
+                onChange={(event) => setSelectedTeamId(event.target.value)}
+                className="flex-1 rounded-md bg-neutral-900 border border-neutral-700 px-2 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-blue-500"
+              >
+                <option value="">Personal workspace (no team)</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name} ({team.role})
+                  </option>
+                ))}
+              </select>
+              <button
+                className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
+                disabled={!workspace || isCollabLoading}
+                onClick={async () => {
+                  if (!workspace) return;
+                  setIsCollabLoading(true);
+                  const ok = await assignWorkspaceTeamAPI(
+                    workspace.metadata.id,
+                    selectedTeamId || null
+                  );
+                  await refreshWorkspaces();
+                  setIsCollabLoading(false);
+                  if (ok) {
+                    toast.success('Workspace collaboration scope updated');
+                  } else {
+                    toast.error('Failed to update workspace team');
+                  }
+                }}
+              >
+                Apply
+              </button>
+            </div>
+            <p className="mt-2 text-[11px] text-neutral-500">
+              Invite members after assigning a team. Invite expects Clerk `userId`.
+            </p>
+          </div>
+
+          <div className="rounded-md border border-neutral-800 p-3 bg-neutral-900/60">
+            <div className="text-xs text-neutral-400 mb-2">Create team</div>
+            <div className="flex gap-2">
+              <input
+                value={teamName}
+                onChange={(event) => setTeamName(event.target.value)}
+                placeholder="Team name"
+                className="flex-1 rounded-md bg-neutral-900 border border-neutral-700 px-2 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-blue-500"
+              />
+              <button
+                className="px-3 py-1.5 text-xs rounded-md bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
+                disabled={!teamName.trim() || isCollabLoading}
+                onClick={async () => {
+                  setIsCollabLoading(true);
+                  const teamId = await createTeamAPI(teamName.trim());
+                  if (teamId) {
+                    setTeamName('');
+                    await loadTeams();
+                    setSelectedTeamId(teamId);
+                    toast.success('Team created');
+                  } else {
+                    toast.error('Failed to create team');
+                  }
+                  setIsCollabLoading(false);
+                }}
+              >
+                Create
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-neutral-800 p-3 bg-neutral-900/60">
+            <div className="text-xs text-neutral-400 mb-2">Invite member</div>
+            <div className="flex gap-2">
+              <input
+                value={inviteUserId}
+                onChange={(event) => setInviteUserId(event.target.value)}
+                placeholder="Clerk userId (user_...)"
+                className="flex-1 rounded-md bg-neutral-900 border border-neutral-700 px-2 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-blue-500"
+              />
+              <select
+                value={inviteRole}
+                onChange={(event) => setInviteRole(event.target.value as TeamRole)}
+                className="rounded-md bg-neutral-900 border border-neutral-700 px-2 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-blue-500"
+              >
+                <option value="VIEWER">VIEWER</option>
+                <option value="EDITOR">EDITOR</option>
+                <option value="ADMIN">ADMIN</option>
+              </select>
+              <button
+                className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
+                disabled={!selectedTeamId || !inviteUserId.trim() || isCollabLoading}
+                onClick={async () => {
+                  if (!selectedTeamId) return;
+                  setIsCollabLoading(true);
+                  const ok = await inviteTeamMemberAPI(
+                    selectedTeamId,
+                    inviteUserId.trim(),
+                    inviteRole
+                  );
+                  if (ok) {
+                    setInviteUserId('');
+                    await loadMembers(selectedTeamId);
+                    toast.success('Member invited');
+                  } else {
+                    toast.error('Failed to invite member');
+                  }
+                  setIsCollabLoading(false);
+                }}
+              >
+                Invite
+              </button>
+            </div>
+            <div className="mt-3 max-h-36 overflow-y-auto rounded border border-neutral-800">
+              {members.length === 0 ? (
+                <div className="px-2 py-2 text-[11px] text-neutral-500">No members found for selected team.</div>
+              ) : (
+                members.map((member) => (
+                  <div key={member.userId} className="px-2 py-1.5 text-xs border-b last:border-b-0 border-neutral-800 flex items-center justify-between">
+                    <span className="truncate">{member.userId}</span>
+                    <span className="text-neutral-400">{member.role}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
-
