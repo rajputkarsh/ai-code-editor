@@ -38,6 +38,7 @@ export function WorkspaceSelector() {
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isCollaborateOpen, setIsCollaborateOpen] = useState(false);
+  const [isCreateProjectLoading, setIsCreateProjectLoading] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [templateType, setTemplateType] = useState<WorkspaceTemplateType>('react-vite');
   const [teams, setTeams] = useState<TeamListItem[]>([]);
@@ -207,8 +208,10 @@ export function WorkspaceSelector() {
             </button>
             <button
               className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-500"
+              disabled={isCreateProjectLoading}
               onClick={async () => {
-                if (!workspaceName.trim()) return;
+                if (!workspaceName.trim() || isCreateProjectLoading) return;
+                setIsCreateProjectLoading(true);
                 try {
                   const result = await createNewWorkspace(workspaceName.trim(), {
                     template: templateType,
@@ -227,10 +230,12 @@ export function WorkspaceSelector() {
                   setIsOpen(false);
                 } catch (error) {
                   toast.error(error instanceof Error ? error.message : 'Failed to create project');
+                } finally {
+                  setIsCreateProjectLoading(false);
                 }
               }}
             >
-              Create
+              {isCreateProjectLoading ? 'Creating...' : 'Create'}
             </button>
           </>
         }
