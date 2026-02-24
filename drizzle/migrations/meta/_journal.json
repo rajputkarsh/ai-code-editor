@@ -36,6 +36,20 @@
       "when": 1769494862230,
       "tag": "0004_sleepy_lady_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1772006400000,
+      "tag": "0005_collaboration_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1771959333345,
+      "tag": "0006_sleepy_thundra",
+      "breakpoints": true
     }
   ]
 }

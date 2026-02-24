@@ -18,6 +18,7 @@ export async function createWorkspaceAPI(workspace: {
   id: string;
   name: string;
   type: WorkspaceType;
+  teamId?: string;
   source?: WorkspaceSource;
   vfs: VFSStructure;
   editorState?: EditorState;
@@ -142,6 +143,7 @@ export async function listWorkspacesAPI(): Promise<{
     name: string;
     source: WorkspaceSource;
     type: WorkspaceType;
+    teamId?: string | null;
     lastOpenedAt: Date;
     createdAt: Date;
   }>;
@@ -206,4 +208,3 @@ export async function activateWorkspaceAPI(workspaceId: string): Promise<boolean
     return false;
   }
 }
-

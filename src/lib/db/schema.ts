@@ -8,7 +8,7 @@
  * - Metadata (name, source, timestamps)
  */
 
-import { pgTable, text, timestamp, uuid, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, uuid, jsonb, uniqueIndex } from 'drizzle-orm/pg-core';
 
 /**
  * Workspaces Table
@@ -34,6 +34,8 @@ import { pgTable, text, timestamp, uuid, jsonb } from 'drizzle-orm/pg-core';
 export const workspaces = pgTable('workspaces', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: text('user_id').notNull(), // Clerk user ID
+  // Team-owned workspace when set; otherwise workspace is user-owned.
+  teamId: uuid('team_id'),
   name: text('name').notNull(),
   source: text('source').notNull(), // 'zip' | 'github' | 'manual'
   
@@ -54,6 +56,90 @@ export const workspaces = pgTable('workspaces', {
 
 export type Workspace = typeof workspaces.$inferSelect;
 export type NewWorkspace = typeof workspaces.$inferInsert;
+
+/**
+ * Team Table (Phase 5)
+ */
+export const teams = pgTable('teams', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  ownerId: text('owner_id').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type Team = typeof teams.$inferSelect;
+export type NewTeam = typeof teams.$inferInsert;
+
+/**
+ * Team Memberships with role-based access.
+ */
+export const teamMemberships = pgTable(
+  'team_memberships',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    teamId: uuid('team_id').notNull(),
+    userId: text('user_id').notNull(),
+    role: text('role').notNull(), // OWNER | ADMIN | EDITOR | VIEWER
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    teamUserUnique: uniqueIndex('team_memberships_team_user_idx').on(table.teamId, table.userId),
+  })
+);
+
+export type TeamMembership = typeof teamMemberships.$inferSelect;
+export type NewTeamMembership = typeof teamMemberships.$inferInsert;
+
+/**
+ * Workspace comments (file-level only, non-threaded).
+ */
+export const workspaceComments = pgTable('workspace_comments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workspaceId: uuid('workspace_id').notNull(),
+  fileId: text('file_id').notNull(),
+  content: text('content').notNull(),
+  createdBy: text('created_by').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type WorkspaceComment = typeof workspaceComments.$inferSelect;
+export type NewWorkspaceComment = typeof workspaceComments.$inferInsert;
+
+/**
+ * Shared team prompt library.
+ */
+export const teamPrompts = pgTable('team_prompts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  teamId: uuid('team_id').notNull(),
+  title: text('title').notNull(),
+  prompt: text('prompt').notNull(),
+  createdBy: text('created_by').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type TeamPrompt = typeof teamPrompts.$inferSelect;
+export type NewTeamPrompt = typeof teamPrompts.$inferInsert;
+
+/**
+ * Immutable AI action audit logs.
+ */
+export const aiAuditLogs = pgTable('ai_audit_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workspaceId: uuid('workspace_id').notNull(),
+  teamId: uuid('team_id'),
+  triggeredBy: text('triggered_by').notNull(),
+  action: text('action').notNull(),
+  filesModified: jsonb('files_modified').notNull(),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export type AIAuditLog = typeof aiAuditLogs.$inferSelect;
+export type NewAIAuditLog = typeof aiAuditLogs.$inferInsert;
 
 /**
  * Workspace Settings Table (Phase 2.5)

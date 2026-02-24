@@ -51,6 +51,7 @@ export interface WorkspaceMetadata {
   createdAt: Date;
   lastOpenedAt: Date;
   userId?: string; // Owner of the workspace (for cloud persistence)
+  teamId?: string; // Team owner when workspace is collaborative
   githubMetadata?: GitHubMetadata; // Only present for GitHub-linked workspaces
 }
 

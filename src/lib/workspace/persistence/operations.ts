@@ -22,6 +22,14 @@ import {
   WorkspaceCountLimitExceededError,
 } from './storage-utils';
 import { env } from '@/lib/config/env';
+import {
+  assertCanDeleteWorkspace,
+  assertCanModifyWorkspace,
+  assertCanReadWorkspace,
+  ensureTeamRole,
+  listAccessibleWorkspaces,
+  resolveWorkspaceAccess,
+} from '@/lib/collaboration/operations';
 
 const { workspaces: workspacesTable, workspaceSettings: workspaceSettingsTable } = schema;
 
@@ -100,7 +108,10 @@ async function getUserWorkspaceCount(userId: string): Promise<number> {
  */
 export async function createWorkspace(
   userId: string,
-  workspace: Workspace
+  workspace: Workspace,
+  options?: {
+    teamId?: string;
+  }
 ): Promise<string | null> {
   const db = getDb();
   if (!db) return null;
@@ -127,11 +138,16 @@ export async function createWorkspace(
       );
     }
 
+    if (options?.teamId) {
+      await ensureTeamRole(userId, options.teamId, 'EDITOR');
+    }
+
     const result = await db
       .insert(workspacesTable)
       .values({
         id: workspace.metadata.id,
         userId: userId,
+        teamId: options?.teamId ?? null,
         name: workspace.metadata.name,
         source: workspace.metadata.source,
         vfsData: serializeVFS(workspace.vfs),
@@ -183,17 +199,15 @@ export async function updateWorkspace(
   if (!db) return;
 
   try {
+    const access = await resolveWorkspaceAccess(userId, workspaceId);
+    assertCanModifyWorkspace(access);
+
     // Phase 1.6: Check storage limit before updating
     // First, get the current workspace to calculate size delta
     const currentWorkspace = await db
       .select({ vfsData: workspacesTable.vfsData })
       .from(workspacesTable)
-      .where(
-        and(
-          eq(workspacesTable.id, workspaceId),
-          eq(workspacesTable.userId, userId)
-        )
-      )
+      .where(eq(workspacesTable.id, workspaceId))
       .limit(1);
 
     if (currentWorkspace.length > 0) {
@@ -224,12 +238,7 @@ export async function updateWorkspace(
         updatedAt: new Date(),
         lastOpenedAt: new Date(), // Update last opened when workspace is saved
       })
-      .where(
-        and(
-          eq(workspacesTable.id, workspaceId),
-          eq(workspacesTable.userId, userId)
-        )
-      );
+      .where(eq(workspacesTable.id, workspaceId));
   } catch (error) {
     // Re-throw custom errors
     if (error instanceof StorageLimitExceededError) {
@@ -259,15 +268,13 @@ export async function loadWorkspace(
   if (!db) return null;
 
   try {
+    const access = await resolveWorkspaceAccess(userId, workspaceId);
+    assertCanReadWorkspace(access);
+
     const result = await db
       .select()
       .from(workspacesTable)
-      .where(
-        and(
-          eq(workspacesTable.id, workspaceId),
-          eq(workspacesTable.userId, userId)
-        )
-      )
+      .where(eq(workspacesTable.id, workspaceId))
       .limit(1);
 
     if (result.length === 0) {
@@ -285,6 +292,7 @@ export async function loadWorkspace(
         createdAt: row.createdAt,
         lastOpenedAt: row.lastOpenedAt,
         userId: row.userId,
+        teamId: row.teamId ?? undefined,
         githubMetadata: row.githubMetadata as any,
       },
       vfs: row.vfsData as VFSStructure,
@@ -310,24 +318,12 @@ export async function listWorkspaces(userId: string): Promise<Array<{
   name: string;
   source: string;
   type: WorkspaceType;
+  teamId?: string | null;
   lastOpenedAt: Date;
   createdAt: Date;
 }>> {
-  const db = getDb();
-  if (!db) return [];
-
   try {
-    const result = await db
-      .select({
-        id: workspacesTable.id,
-        name: workspacesTable.name,
-        source: workspacesTable.source,
-        lastOpenedAt: workspacesTable.lastOpenedAt,
-        createdAt: workspacesTable.createdAt,
-      })
-      .from(workspacesTable)
-      .where(eq(workspacesTable.userId, userId))
-      .orderBy(desc(workspacesTable.lastOpenedAt));
+    const result = await listAccessibleWorkspaces(userId);
 
     return result.map((row) => ({
       ...row,
@@ -374,20 +370,8 @@ export async function setActiveWorkspace(userId: string, workspaceId: string): P
   if (!db) return;
 
   try {
-    const ownedWorkspace = await db
-      .select({ id: workspacesTable.id })
-      .from(workspacesTable)
-      .where(
-        and(
-          eq(workspacesTable.id, workspaceId),
-          eq(workspacesTable.userId, userId)
-        )
-      )
-      .limit(1);
-
-    if (ownedWorkspace.length === 0) {
-      throw new Error('Workspace not found or not owned by user');
-    }
+    const access = await resolveWorkspaceAccess(userId, workspaceId);
+    assertCanReadWorkspace(access);
 
     await db
       .insert(workspaceSettingsTable)
@@ -410,12 +394,7 @@ export async function setActiveWorkspace(userId: string, workspaceId: string): P
         lastOpenedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(workspacesTable.id, workspaceId),
-          eq(workspacesTable.userId, userId)
-        )
-      );
+      .where(eq(workspacesTable.id, workspaceId));
   } catch (error) {
     console.error('Failed to set active workspace:', error);
     throw new Error('Failed to set active workspace');
@@ -462,18 +441,16 @@ export async function renameWorkspace(
   if (!db) return;
 
   try {
+    const access = await resolveWorkspaceAccess(userId, workspaceId);
+    assertCanModifyWorkspace(access);
+
     await db
       .update(workspacesTable)
       .set({
         name,
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(workspacesTable.id, workspaceId),
-          eq(workspacesTable.userId, userId)
-        )
-      );
+      .where(eq(workspacesTable.id, workspaceId));
   } catch (error) {
     console.error('Failed to rename workspace:', error);
     throw new Error('Failed to rename workspace');
@@ -497,6 +474,9 @@ export async function deleteWorkspace(
   if (!db) return;
 
   try {
+    const access = await resolveWorkspaceAccess(userId, workspaceId);
+    assertCanDeleteWorkspace(access);
+
     const activeWorkspaceId = await getActiveWorkspaceId(userId);
     if (activeWorkspaceId === workspaceId) {
       await clearActiveWorkspace(userId);
@@ -504,12 +484,7 @@ export async function deleteWorkspace(
 
     await db
       .delete(workspacesTable)
-      .where(
-        and(
-          eq(workspacesTable.id, workspaceId),
-          eq(workspacesTable.userId, userId)
-        )
-      );
+      .where(eq(workspacesTable.id, workspaceId));
   } catch (error) {
     console.error('Failed to delete workspace:', error);
     throw new Error('Failed to delete workspace');
@@ -526,37 +501,19 @@ export async function deleteWorkspace(
  * @returns Most recent workspace or null if none exist
  */
 export async function getLastOpenedWorkspace(userId: string): Promise<Workspace | null> {
-  const db = getDb();
-  if (!db) return null;
-
   try {
-    const result = await db
-      .select()
-      .from(workspacesTable)
-      .where(eq(workspacesTable.userId, userId))
-      .orderBy(desc(workspacesTable.lastOpenedAt))
-      .limit(1);
-
+    const result = await listAccessibleWorkspaces(userId);
     if (result.length === 0) {
       return null;
     }
 
-    const row = result[0];
+    const workspaceId = result[0].id;
+    const workspace = await loadWorkspace(userId, workspaceId);
+    if (!workspace) {
+      return null;
+    }
     
-    return {
-      metadata: {
-        id: row.id,
-        name: row.name,
-        source: row.source as 'zip' | 'github' | 'manual',
-        type: getWorkspaceTypeFromSource(row.source as WorkspaceSource),
-        createdAt: row.createdAt,
-        lastOpenedAt: row.lastOpenedAt,
-        userId: row.userId,
-        githubMetadata: row.githubMetadata as any,
-      },
-      vfs: row.vfsData as VFSStructure,
-      editorState: row.editorStateData as EditorState | undefined,
-    };
+    return workspace;
   } catch (error) {
     console.error('Failed to get last opened workspace:', error);
     return null;

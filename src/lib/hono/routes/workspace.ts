@@ -45,6 +45,7 @@ export const workspaceApp = new Hono();
 const createWorkspaceSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(255),
+  teamId: z.string().uuid().optional(),
   type: z.enum(['cloud', 'github']).optional(),
   source: z.enum(['zip', 'github', 'manual']).optional(),
   vfs: z.object({
@@ -173,7 +174,9 @@ workspaceApp.post(
         editorState: data.editorState as EditorState | undefined,
       };
 
-      const workspaceId = await createWorkspace(userId, workspace);
+      const workspaceId = await createWorkspace(userId, workspace, {
+        teamId: data.teamId,
+      });
 
       if (!workspaceId) {
         return c.json(
