@@ -66,7 +66,7 @@ Remember: You are a helpful collaborator, not an autonomous code modifier.`;
 /**
  * Convert our generic ChatMessage format to Gemini's expected format
  */
-function convertToGeminiFormat(messages: ChatMessage[]) {
+function convertToGeminiFormat(messages: ChatMessage[], systemPrompt: string) {
     // Gemini doesn't have a separate system role, so we inject system prompt as first user message
     const geminiMessages = messages.map((msg) => {
         // Gemini uses 'user' and 'model' roles
@@ -82,7 +82,7 @@ function convertToGeminiFormat(messages: ChatMessage[]) {
     if (!firstMessage || !firstMessage.parts[0].text.includes('AI coding assistant')) {
         geminiMessages.unshift({
             role: 'user',
-            parts: [{ text: SYSTEM_PROMPT }],
+            parts: [{ text: systemPrompt }],
         });
         geminiMessages.splice(1, 0, {
             role: 'model',
@@ -111,15 +111,21 @@ export class GeminiProvider implements AIProvider {
      * Stream chat completion from Gemini
      * Yields text chunks as they arrive from the API
      */
-    async *streamChatCompletion(messages: ChatMessage[]): AsyncIterable<AIStreamChunk> {
+    async *streamChatCompletion(
+        messages: ChatMessage[],
+        options?: {
+            model?: string;
+            systemPromptOverride?: string;
+        }
+    ): AsyncIterable<AIStreamChunk> {
         try {
             const model = this.genAI.getGenerativeModel({
-                model: GEMINI_CONFIG.model,
+                model: options?.model ?? GEMINI_CONFIG.model,
                 generationConfig: GEMINI_CONFIG.generationConfig,
                 safetySettings: GEMINI_CONFIG.safetySettings,
             });
 
-            const geminiMessages = convertToGeminiFormat(messages);
+            const geminiMessages = convertToGeminiFormat(messages, options?.systemPromptOverride ?? SYSTEM_PROMPT);
             
             // Extract history (all messages except the last one) and the last prompt
             const history = geminiMessages.slice(0, -1);
@@ -159,15 +165,21 @@ export class GeminiProvider implements AIProvider {
      * Get complete (non-streaming) chat response
      * Used as a fallback or for simpler use cases
      */
-    async getChatCompletion(messages: ChatMessage[]): Promise<string> {
+    async getChatCompletion(
+        messages: ChatMessage[],
+        options?: {
+            model?: string;
+            systemPromptOverride?: string;
+        }
+    ): Promise<string> {
         try {
             const model = this.genAI.getGenerativeModel({
-                model: GEMINI_CONFIG.model,
+                model: options?.model ?? GEMINI_CONFIG.model,
                 generationConfig: GEMINI_CONFIG.generationConfig,
                 safetySettings: GEMINI_CONFIG.safetySettings,
             });
 
-            const geminiMessages = convertToGeminiFormat(messages);
+            const geminiMessages = convertToGeminiFormat(messages, options?.systemPromptOverride ?? SYSTEM_PROMPT);
             
             // Extract history and last message
             const history = geminiMessages.slice(0, -1);
@@ -201,4 +213,3 @@ export function getGeminiProvider(): GeminiProvider {
     }
     return geminiProviderInstance;
 }
-

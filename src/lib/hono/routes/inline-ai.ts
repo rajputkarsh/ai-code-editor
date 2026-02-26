@@ -16,6 +16,10 @@ import { streamSSE } from 'hono/streaming';
 import { getGeminiProvider } from '@/lib/ai/provider/gemini';
 import { generateInlineCompletionPrompt, parseInlineCompletion } from '@/lib/ai/inline-completion';
 import { AppVariables } from '../middleware';
+import { estimateTokenCount } from '@/lib/ai/token-utils';
+import { getUsageGuard, resolveModelForTask } from '@/lib/ai/platform/model-governance';
+import { recordAIUsageEvent } from '@/lib/ai/platform/usage-tracker';
+import { logAnalyticsEvent } from '@/lib/ai/platform/analytics';
 
 export const inlineAIApp = new Hono<{ Variables: AppVariables }>();
 
@@ -34,13 +38,20 @@ inlineAIApp.post(
             codeBeforeCursor: z.string(),
             codeAfterCursor: z.string(),
             lineNumber: z.number(),
+            workspaceId: z.string().uuid().optional(),
+            model: z.string().optional(),
         })
     ),
     async (c) => {
-        const { fileName, language, codeBeforeCursor, codeAfterCursor, lineNumber } = c.req.valid('json');
+        const { fileName, language, codeBeforeCursor, codeAfterCursor, lineNumber, workspaceId, model: requestedModel } = c.req.valid('json');
         const userId = c.get('userId'); // From auth middleware
 
         try {
+            const usageGuard = await getUsageGuard(userId);
+            if (!usageGuard.allowed) {
+                return c.json({ error: usageGuard.message ?? 'AI is unavailable due to usage limits' }, 429);
+            }
+
             const prompt = generateInlineCompletionPrompt(
                 fileName,
                 language,
@@ -48,6 +59,12 @@ inlineAIApp.post(
                 codeAfterCursor,
                 lineNumber
             );
+            const model = await resolveModelForTask({
+                userId,
+                taskType: 'inline_completion',
+                workspaceId,
+                requestedModel,
+            });
 
             const gemini = getGeminiProvider();
             const response = await gemini.getChatCompletion([
@@ -55,11 +72,25 @@ inlineAIApp.post(
                     role: 'user',
                     content: prompt,
                 },
-            ]);
+            ], { model });
 
             const completion = parseInlineCompletion(response);
+            await logAnalyticsEvent({
+                eventType: 'AI_REQUEST',
+                userId,
+                workspaceId,
+                metadata: { taskType: 'inline_completion', model },
+            });
+            await recordAIUsageEvent({
+                userId,
+                workspaceId,
+                taskType: 'inline_completion',
+                modelUsed: model,
+                inputTokens: estimateTokenCount(prompt),
+                outputTokens: estimateTokenCount(response),
+            });
 
-            return c.json({ completion });
+            return c.json({ completion, model });
 
         } catch (error) {
             console.error('Inline completion error:', error);
@@ -87,13 +118,20 @@ inlineAIApp.post(
             language: z.string(),
             code: z.string(),
             selectedCode: z.string().optional(),
+            workspaceId: z.string().uuid().optional(),
+            model: z.string().optional(),
         })
     ),
     async (c) => {
-        const { action, fileName, language, code, selectedCode } = c.req.valid('json');
+        const { action, fileName, language, code, selectedCode, workspaceId, model: requestedModel } = c.req.valid('json');
         const userId = c.get('userId');
 
         try {
+            const usageGuard = await getUsageGuard(userId);
+            if (!usageGuard.allowed) {
+                return c.json({ error: usageGuard.message ?? 'AI is unavailable due to usage limits' }, 429);
+            }
+
             const actionPrompts: Record<string, string> = {
                 'refactor': 'Refactor the following code to improve readability and maintainability. Keep the same functionality.',
                 'convert-to-typescript': 'Convert the following code to TypeScript with proper type annotations.',
@@ -120,13 +158,20 @@ INSTRUCTIONS:
 
 MODIFIED CODE:`;
 
+            const model = await resolveModelForTask({
+                userId,
+                taskType: 'chat',
+                workspaceId,
+                requestedModel,
+            });
+
             const gemini = getGeminiProvider();
             const response = await gemini.getChatCompletion([
                 {
                     role: 'user',
                     content: prompt,
                 },
-            ]);
+            ], { model });
 
             // Extract code from response
             let modifiedCode = response.trim();
@@ -136,10 +181,26 @@ MODIFIED CODE:`;
             }
             modifiedCode = modifiedCode.replace(/^MODIFIED CODE:\s*/i, '');
 
+            await logAnalyticsEvent({
+                eventType: 'AI_REQUEST',
+                userId,
+                workspaceId,
+                metadata: { taskType: 'code_action', action, model },
+            });
+            await recordAIUsageEvent({
+                userId,
+                workspaceId,
+                taskType: 'chat',
+                modelUsed: model,
+                inputTokens: estimateTokenCount(prompt),
+                outputTokens: estimateTokenCount(response),
+            });
+
             return c.json({
                 originalCode: targetCode,
                 modifiedCode,
                 action,
+                model,
             });
 
         } catch (error) {
@@ -166,13 +227,20 @@ inlineAIApp.post(
             language: z.string(),
             code: z.string(),
             scope: z.enum(['file', 'function', 'selection']),
+            workspaceId: z.string().uuid().optional(),
+            model: z.string().optional(),
         })
     ),
     async (c) => {
-        const { fileName, language, code, scope } = c.req.valid('json');
+        const { fileName, language, code, scope, workspaceId, model: requestedModel } = c.req.valid('json');
         const userId = c.get('userId');
 
         try {
+            const usageGuard = await getUsageGuard(userId);
+            if (!usageGuard.allowed) {
+                return c.json({ error: usageGuard.message ?? 'AI is unavailable due to usage limits' }, 429);
+            }
+
             const scopePrompts: Record<string, string> = {
                 'file': 'Provide a comprehensive explanation of what this file does, its purpose, and its main components.',
                 'function': 'Explain this function step-by-step: what it does, how it works, and any important details.',
@@ -197,15 +265,36 @@ INSTRUCTIONS:
 
 EXPLANATION:`;
 
+            const model = await resolveModelForTask({
+                userId,
+                taskType: 'chat',
+                workspaceId,
+                requestedModel,
+            });
+
             const gemini = getGeminiProvider();
             const response = await gemini.getChatCompletion([
                 {
                     role: 'user',
                     content: prompt,
                 },
-            ]);
+            ], { model });
+            await logAnalyticsEvent({
+                eventType: 'AI_REQUEST',
+                userId,
+                workspaceId,
+                metadata: { taskType: 'explain', scope, model },
+            });
+            await recordAIUsageEvent({
+                userId,
+                workspaceId,
+                taskType: 'chat',
+                modelUsed: model,
+                inputTokens: estimateTokenCount(prompt),
+                outputTokens: estimateTokenCount(response),
+            });
 
-            return c.json({ explanation: response });
+            return c.json({ explanation: response, model });
 
         } catch (error) {
             console.error('Explain error:', error);
@@ -216,4 +305,3 @@ EXPLANATION:`;
         }
     }
 );
-

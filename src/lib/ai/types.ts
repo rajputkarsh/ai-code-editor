@@ -35,14 +35,26 @@ export interface AIProvider {
      * @param messages - Chat history including the current prompt
      * @returns AsyncIterable of text chunks
      */
-    streamChatCompletion(messages: ChatMessage[]): AsyncIterable<AIStreamChunk>;
+    streamChatCompletion(
+        messages: ChatMessage[],
+        options?: {
+            model?: string;
+            systemPromptOverride?: string;
+        }
+    ): AsyncIterable<AIStreamChunk>;
 
     /**
      * Get a non-streaming chat completion (for fallback)
      * @param messages - Chat history including the current prompt
      * @returns Complete response text
      */
-    getChatCompletion(messages: ChatMessage[]): Promise<string>;
+    getChatCompletion(
+        messages: ChatMessage[],
+        options?: {
+            model?: string;
+            systemPromptOverride?: string;
+        }
+    ): Promise<string>;
 }
 
 /**

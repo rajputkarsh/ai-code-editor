@@ -9,11 +9,15 @@ import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
 import { getGeminiProvider } from '@/lib/ai/provider/gemini';
 import { ChatMessage } from '@/lib/ai/types';
-import { validateConversationTokens } from '@/lib/ai/token-utils';
+import { estimateTokenCount, validateConversationTokens } from '@/lib/ai/token-utils';
 import { env } from '@/lib/config/env';
 import { z } from 'zod';
+import { AppVariables } from '../middleware';
+import { getUsageGuard, resolveModelForTask } from '@/lib/ai/platform/model-governance';
+import { recordAIUsageEvent } from '@/lib/ai/platform/usage-tracker';
+import { logAnalyticsEvent } from '@/lib/ai/platform/analytics';
 
-const aiChatApp = new Hono();
+const aiChatApp = new Hono<{ Variables: AppVariables }>();
 
 /**
  * Request body validation schema
@@ -38,6 +42,8 @@ const chatRequestSchema = z.object({
                 .optional(),
         })
     ).min(1),
+    workspaceId: z.string().uuid().optional(),
+    model: z.string().optional(),
 });
 
 /**
@@ -61,6 +67,33 @@ aiChatApp.post('/stream', async (c) => {
         }
 
         const { messages } = parseResult.data;
+        const userId = c.get('userId');
+        const workspaceId = parseResult.data.workspaceId;
+
+        const tokenValidation = validateConversationTokens(messages as ChatMessage[]);
+        if (!tokenValidation.valid) {
+            return c.json(
+                {
+                    error: tokenValidation.error || 'Token limit exceeded',
+                    inputTokens: tokenValidation.inputTokens,
+                    maxInputTokens: env.AI_MAX_INPUT_TOKENS,
+                },
+                400
+            );
+        }
+
+        // Token accounting logic boundary: usage caps are checked before model invocation
+        // and request usage is persisted after completion.
+        const usageGuard = await getUsageGuard(userId);
+        if (!usageGuard.allowed) {
+            return c.json(
+                {
+                    error: usageGuard.message ?? 'AI is unavailable due to usage limits',
+                    usage: usageGuard.snapshot,
+                },
+                429
+            );
+        }
 
         // Validate last message is from user
         const lastMessage = messages[messages.length - 1];
@@ -75,15 +108,48 @@ aiChatApp.post('/stream', async (c) => {
 
         // Get AI provider
         const provider = getGeminiProvider();
+        const model = await resolveModelForTask({
+            userId,
+            taskType: 'chat',
+            workspaceId,
+            requestedModel: parseResult.data.model,
+        });
+        const inputTokens = estimateTokenCount(messages.map((message) => message.content).join('\n'));
 
         // Stream the response
         return stream(c, async (streamWriter) => {
+            let outputText = '';
             try {
-                for await (const chunk of provider.streamChatCompletion(messages as ChatMessage[])) {
+                await logAnalyticsEvent({
+                    eventType: 'AI_REQUEST',
+                    userId,
+                    workspaceId,
+                    metadata: { taskType: 'chat', mode: 'stream', model },
+                });
+
+                for await (const chunk of provider.streamChatCompletion(messages as ChatMessage[], { model })) {
                     // Write chunk as Server-Sent Events format
+                    outputText += chunk.text;
                     await streamWriter.write(`data: ${JSON.stringify(chunk)}\n\n`);
                 }
+
+                const outputTokens = estimateTokenCount(outputText);
+                const updatedSnapshot = await recordAIUsageEvent({
+                    userId,
+                    workspaceId,
+                    taskType: 'chat',
+                    modelUsed: model,
+                    inputTokens,
+                    outputTokens,
+                });
                 
+                if (updatedSnapshot.warningReached) {
+                    await streamWriter.write(
+                        `data: ${JSON.stringify({
+                            warning: `AI usage warning: ${updatedSnapshot.usedTokens}/${updatedSnapshot.hardLimitTokens} tokens`,
+                        })}\n\n`
+                    );
+                }
                 // Send done signal
                 await streamWriter.write('data: [DONE]\n\n');
             } catch (error) {
@@ -128,6 +194,18 @@ aiChatApp.post('/complete', async (c) => {
         }
 
         const { messages } = parseResult.data;
+        const userId = c.get('userId');
+        const workspaceId = parseResult.data.workspaceId;
+        const usageGuard = await getUsageGuard(userId);
+        if (!usageGuard.allowed) {
+            return c.json(
+                {
+                    error: usageGuard.message ?? 'AI is unavailable due to usage limits',
+                    usage: usageGuard.snapshot,
+                },
+                429
+            );
+        }
 
         // Validate last message is from user
         const lastMessage = messages[messages.length - 1];
@@ -155,12 +233,38 @@ aiChatApp.post('/complete', async (c) => {
 
         // Get AI provider
         const provider = getGeminiProvider();
+        const model = await resolveModelForTask({
+            userId,
+            taskType: 'chat',
+            workspaceId,
+            requestedModel: parseResult.data.model,
+        });
+        await logAnalyticsEvent({
+            eventType: 'AI_REQUEST',
+            userId,
+            workspaceId,
+            metadata: { taskType: 'chat', mode: 'complete', model },
+        });
 
         // Get complete response
-        const response = await provider.getChatCompletion(messages as ChatMessage[]);
+        const response = await provider.getChatCompletion(messages as ChatMessage[], { model });
+        const inputTokens = estimateTokenCount(messages.map((message) => message.content).join('\n'));
+        const outputTokens = estimateTokenCount(response);
+        const usage = await recordAIUsageEvent({
+            userId,
+            workspaceId,
+            taskType: 'chat',
+            modelUsed: model,
+            inputTokens,
+            outputTokens,
+        });
 
         return c.json({
             response,
+            model,
+            usageWarning: usage.warningReached
+                ? `AI usage warning: ${usage.usedTokens}/${usage.hardLimitTokens} tokens`
+                : null,
         });
     } catch (error) {
         console.error('AI chat error:', error);
@@ -200,5 +304,3 @@ aiChatApp.get('/health', async (c) => {
 });
 
 export { aiChatApp };
-
-

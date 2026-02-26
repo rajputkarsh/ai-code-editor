@@ -30,6 +30,7 @@ import { inlineAIApp } from './routes/inline-ai';
 import githubClerkApp from './routes/github-clerk'; // Updated to use Clerk OAuth
 import { terminalApp } from './routes/terminal';
 import { collaborationApp } from './routes/collaboration';
+import { aiPlatformApp } from './routes/ai-platform';
 
 app.route('/health', health);
 app.route('/ai-chat', aiChatApp);
@@ -39,3 +40,4 @@ app.route('/inline-ai', inlineAIApp);
 app.route('/github', githubClerkApp); // Using Clerk-based GitHub integration
 app.route('/terminal', terminalApp);
 app.route('/collaboration', collaborationApp);
+app.route('/ai-platform', aiPlatformApp);

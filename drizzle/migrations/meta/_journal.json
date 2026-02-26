@@ -64,6 +64,20 @@
       "when": 1771961145933,
       "tag": "0008_steep_ultragirl",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1772121600000,
+      "tag": "0009_phase6_platform",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1772133351375,
+      "tag": "0010_skinny_the_phantom",
+      "breakpoints": true
     }
   ]
 }

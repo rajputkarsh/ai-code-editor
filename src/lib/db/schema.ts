@@ -8,7 +8,7 @@
  * - Metadata (name, source, timestamps)
  */
 
-import { pgTable, text, timestamp, uuid, jsonb, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, uuid, jsonb, uniqueIndex, integer, boolean } from 'drizzle-orm/pg-core';
 
 /**
  * Workspaces Table
@@ -183,4 +183,149 @@ export const githubAuth = pgTable('github_auth', {
 
 export type GitHubAuth = typeof githubAuth.$inferSelect;
 export type NewGitHubAuth = typeof githubAuth.$inferInsert;
+
+/**
+ * Phase 6: User-defined AI agent configurations.
+ *
+ * Agent permission boundaries are stored server-side and are never trusted from
+ * client requests alone.
+ */
+export const aiAgents = pgTable('ai_agents', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  description: text('description').notNull(),
+  persona: text('persona').notNull(),
+  allowedTools: jsonb('allowed_tools').notNull(), // string[]
+  permissionScope: jsonb('permission_scope').notNull(),
+  createdBy: text('created_by').notNull(),
+  teamId: uuid('team_id'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type AIAgent = typeof aiAgents.$inferSelect;
+export type NewAIAgent = typeof aiAgents.$inferInsert;
+
+/**
+ * Phase 6: Per-task model preference.
+ *
+ * taskType supports: chat | inline_completion | agent_mode
+ */
+export const aiModelPreferences = pgTable(
+  'ai_model_preferences',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id').notNull(),
+    workspaceId: uuid('workspace_id'),
+    taskType: text('task_type').notNull(),
+    model: text('model').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    modelPrefUnique: uniqueIndex('ai_model_preferences_scope_idx').on(
+      table.userId,
+      table.workspaceId,
+      table.taskType
+    ),
+  })
+);
+
+export type AIModelPreference = typeof aiModelPreferences.$inferSelect;
+export type NewAIModelPreference = typeof aiModelPreferences.$inferInsert;
+
+/**
+ * Phase 6: Request-level token accounting for cost governance.
+ */
+export const aiUsageEvents = pgTable('ai_usage_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  workspaceId: uuid('workspace_id'),
+  teamId: uuid('team_id'),
+  taskType: text('task_type').notNull(),
+  modelUsed: text('model_used').notNull(),
+  inputTokens: integer('input_tokens').notNull(),
+  outputTokens: integer('output_tokens').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export type AIUsageEvent = typeof aiUsageEvents.$inferSelect;
+export type NewAIUsageEvent = typeof aiUsageEvents.$inferInsert;
+
+/**
+ * Phase 6: Server-enforced usage caps.
+ *
+ * Scope:
+ * - USER: userId set, teamId null
+ * - TEAM: teamId set, userId null
+ */
+export const aiUsageLimits = pgTable(
+  'ai_usage_limits',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    scopeType: text('scope_type').notNull(), // USER | TEAM
+    userId: text('user_id'),
+    teamId: uuid('team_id'),
+    billingPeriodStart: timestamp('billing_period_start').notNull(),
+    billingPeriodEnd: timestamp('billing_period_end').notNull(),
+    softLimitTokens: integer('soft_limit_tokens').notNull(),
+    hardLimitTokens: integer('hard_limit_tokens').notNull(),
+    warningThresholdPercent: integer('warning_threshold_percent').notNull().default(80),
+    aiDisabled: boolean('ai_disabled').notNull().default(false),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    usageLimitUserUnique: uniqueIndex('ai_usage_limits_user_period_idx').on(
+      table.scopeType,
+      table.userId,
+      table.billingPeriodStart,
+      table.billingPeriodEnd
+    ),
+    usageLimitTeamUnique: uniqueIndex('ai_usage_limits_team_period_idx').on(
+      table.scopeType,
+      table.teamId,
+      table.billingPeriodStart,
+      table.billingPeriodEnd
+    ),
+  })
+);
+
+export type AIUsageLimit = typeof aiUsageLimits.$inferSelect;
+export type NewAIUsageLimit = typeof aiUsageLimits.$inferInsert;
+
+/**
+ * Phase 6: Extension metadata registry.
+ */
+export const extensions = pgTable('extensions', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  version: text('version').notNull(),
+  commands: jsonb('commands').notNull(), // string[]
+  permissionScope: jsonb('permission_scope').notNull(), // string[]
+  createdBy: text('created_by').notNull(),
+  teamId: uuid('team_id'),
+  isEnabled: boolean('is_enabled').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type Extension = typeof extensions.$inferSelect;
+export type NewExtension = typeof extensions.$inferInsert;
+
+/**
+ * Phase 6: Product analytics events kept separate from immutable AI audit logs.
+ */
+export const analyticsEvents = pgTable('analytics_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  eventType: text('event_type').notNull(),
+  userId: text('user_id').notNull(),
+  workspaceId: uuid('workspace_id'),
+  teamId: uuid('team_id'),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
+export type NewAnalyticsEvent = typeof analyticsEvents.$inferInsert;
 

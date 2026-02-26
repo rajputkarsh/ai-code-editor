@@ -1,178 +1,269 @@
-# PHASE 5 – Collaboration & Team Workflows Execution Prompt
+# PHASE 6 – Advanced AI & Platform Expansion
 
-You are a senior full-stack + distributed systems engineer.
+You are a senior AI systems + platform architect.
 
 We are implementing:
 
-PHASE 5: Collaboration & Team Workflows
+PHASE 6: Advanced AI & Platform Expansion
 
-This phase introduces:
-- Multi-user workspaces
-- Real-time editing
-- Role-based access
-- Shared AI governance
+This phase transforms the product into an extensible AI development platform.
 
-Do NOT refactor existing workspace architecture.
-Extend it cleanly.
+Do NOT refactor existing editor, workspace, or collaboration layers.
+Extend the architecture cleanly.
 
 --------------------------------------------------
 🎯 PHASE GOAL
 --------------------------------------------------
 
-Enable team-based development while preserving:
-- Security
-- Workspace isolation
-- AI safety guarantees
-- Auditability
+Position the system as:
 
-This phase must not break single-user mode.
+- AI-native
+- Extensible
+- Governable
+- Cost-aware
+- Enterprise-ready
+
+AI must remain:
+- Transparent
+- Permission-bound
+- Auditable
 
 --------------------------------------------------
-8.1 User & Workspace Management
+9.1 Custom Agents
 --------------------------------------------------
 
+Implement a user-configurable Agent Framework.
+
+1️⃣ Agent Definitions
+Create Agent entity:
+- agentId
+- name
+- description
+- persona (system prompt)
+- allowedTools[]
+- permissionScope
+- createdBy
+- teamScope (optional)
+
+Agents are stored in DB.
+
+2️⃣ User-Defined Workflows
+Agents can:
+- Execute multi-step plans
+- Access repository context
+- Use selected tools
+
+Each agent must define:
+- Allowed actions:
+    - readFiles
+    - writeFiles
+    - commit
+    - createBranch
+    - openPR
+- Requires explicit user approval before write actions.
+
+3️⃣ Tool Configuration
+Define tool registry:
+- FileSystemTool
+- GitTool
+- SearchTool
+- TerminalTool (if allowed)
+- AICompletionTool
+
+Agents must not access tools unless explicitly allowed.
+
+4️⃣ Agent Personas
+Allow user-defined system prompts.
+Ensure:
+- Persona is scoped to that agent only.
+- No global model override.
+
+--------------------------------------------------
+9.2 Model & Cost Control
+--------------------------------------------------
+
+Implement AI model governance layer.
+
+1️⃣ Model Selection
+- Allow model selection per task:
+    - Chat
+    - Inline completion
+    - Agent mode
+- Store model preference per user or workspace.
+
+2️⃣ Token Usage Tracking
+Track per request:
+- inputTokens
+- outputTokens
+- modelUsed
+- timestamp
+- workspaceId
+- userId
+
+Persist usage in DB.
+
+3️⃣ Cost Controls
 Implement:
+- Soft usage limit per user/team
+- Hard usage limit per billing period
+- Warning threshold at 80%
 
-1️⃣ Team Entities
-- Create Team model:
-  - teamId
-  - name
-  - ownerId
-  - createdAt
-- Teams contain users.
+When limit exceeded:
+- Disable AI features gracefully.
+- Show clear message.
 
-2️⃣ Membership Model
-- Role-based access:
-  - OWNER
-  - ADMIN
-  - EDITOR
-  - VIEWER
-- Role must be enforced server-side.
-
-3️⃣ Workspace Ownership Update
-- Workspace may belong to:
-  - Individual user
-  - Team
-- Workspace access determined by membership role.
-- Only OWNER/ADMIN can delete workspace.
-
-4️⃣ API Updates (Hono)
-- Add endpoints:
-  - Create team
-  - Invite member
-  - Update role
-  - Remove member
-- Enforce strict auth (Clerk userId).
-- No client-trusted permissions.
+4️⃣ Usage Dashboard
+Provide:
+- Per-user usage
+- Per-workspace usage
+- Per-team usage
+- Model breakdown
 
 --------------------------------------------------
-8.2 Real-time Collaboration
+9.3 Plugin & Extension System
 --------------------------------------------------
 
-Implement collaborative editing with minimal viable reliability.
+Implement a minimal extension framework.
 
-1️⃣ Document Sync
-- Use WebSocket-based sync layer.
-- Apply operational transform (OT) or CRDT (choose minimal viable approach).
-- Sync per-file, not entire workspace.
+1️⃣ Extension Registry
+Define extension interface:
+- id
+- name
+- commands[]
+- activate(context)
+- permissionScope
 
-2️⃣ Presence
-- Show:
-  - Active users
-  - Cursor positions
-  - Active file
-- Presence data must not persist in DB.
+Extensions must:
+- Be sandboxed
+- Not directly access DB
+- Use exposed API layer
 
-3️⃣ Comments & Discussions
-- Allow file-level comments.
-- Comments stored in DB.
-- No threaded discussion complexity.
-- No notifications yet.
+2️⃣ Custom Editor Commands
+Allow extensions to:
+- Register command palette entries
+- Add right-click actions
+- Trigger AI actions
 
-Constraints:
-- Do NOT implement offline-first sync.
-- Do NOT implement version history UI.
-- Avoid over-engineering.
+3️⃣ Framework-Specific Helpers
+Allow predefined extensions such as:
+- React helper
+- Node helper
+- Git workflow helper
 
---------------------------------------------------
-8.3 Shared Agents & Audit Logs
---------------------------------------------------
-
-1️⃣ Team-Level Agents
-- Agents can run within team workspaces.
-- Agent permissions must respect user role.
-
-2️⃣ Shared Prompt Libraries
-- Store reusable prompts at team level.
-- Allow:
-  - Create
-  - Edit
-  - Delete
-  - Reuse
-- Scope strictly to team.
-
-3️⃣ AI Action Audit Logs
-- Persist:
-  - Who triggered AI
-  - What action was taken
-  - Files modified
-  - Timestamp
-- Immutable logs.
-- No log editing.
-- Queryable per workspace.
+4️⃣ Internal Tooling Support
+Provide:
+- Stable plugin API
+- Versioned extension interface
+- Extension lifecycle hooks:
+    - onLoad
+    - onWorkspaceChange
+    - onFileSave
 
 --------------------------------------------------
-🔐 SECURITY REQUIREMENTS
+🔐 SECURITY RULES
 --------------------------------------------------
 
-- All workspace access must validate:
-  userId + teamId + role.
-- Never trust client role.
-- All real-time events must validate membership.
-- Audit logs must not be deletable by non-owners.
+- Agents cannot bypass permission system.
+- Extensions cannot directly mutate workspace without approval.
+- All AI write operations require:
+    - diff preview
+    - explicit user confirmation.
+- Token limits enforced server-side.
+- Model selection validated server-side.
+
+--------------------------------------------------
+📊 SUCCESS METRICS INSTRUMENTATION
+--------------------------------------------------
+
+Track:
+
+1️⃣ AI suggestion acceptance rate
+2️⃣ Agent task completion rate
+3️⃣ Average time saved (estimated)
+4️⃣ PR creation velocity (if GitHub linked)
+5️⃣ DAU/WAU retention
+
+Implement event logging system:
+- AI_REQUEST
+- AI_APPLY
+- AGENT_PLAN_CREATED
+- AGENT_PLAN_APPROVED
+- PR_CREATED
+
+Store analytics separately from audit logs.
 
 --------------------------------------------------
 🚫 OUT OF SCOPE
 --------------------------------------------------
 
-- End-to-end encryption
-- Offline collaboration
-- Enterprise SSO
-- Billing integration
-- Slack / GitHub sync
-- Complex notification systems
-- Version diff history UI
+- Native desktop app
+- Mobile editor
+- Offline-first execution
+- Advanced CPU/memory profiling
+- Complex billing integration
+
+--------------------------------------------------
+⚠ RISKS & MITIGATIONS (Must Reflect in Code)
+--------------------------------------------------
+
+1️⃣ AI hallucinations
+- Always show diff preview before apply.
+
+2️⃣ High LLM costs
+- Enforce token caps.
+- Cache deterministic prompts where possible.
+
+3️⃣ Latency
+- Use streaming responses.
+- Avoid blocking UI.
+
+4️⃣ Trust issues
+- Display agent execution plan before run.
+- Allow step-by-step approval mode.
+
+5️⃣ Git misuse
+- Restrict branch/commit actions by role.
 
 --------------------------------------------------
 🧪 QUALITY REQUIREMENTS
 --------------------------------------------------
 
 - TypeScript strict
-- No `any`
+- No any
 - Clear separation:
-  - Realtime layer
-  - Permission layer
-  - Agent layer
-- Add comments explaining:
-  - Role enforcement decisions
-  - Sync conflict resolution strategy
-  - Audit immutability design
+    - Agent Engine
+    - Model Gateway
+    - Extension System
+    - Cost Tracking
+- Add architectural comments explaining:
+    - Agent permission boundary
+    - Token accounting logic
+    - Plugin isolation strategy
 
 --------------------------------------------------
-✅ EXPECTED OUTPUT
+✅ EXPECTED RESULT
 --------------------------------------------------
 
-1. Teams can be created.
-2. Members can collaborate in same workspace.
-3. Edits sync in real time.
-4. AI actions are logged and auditable.
-5. Role-based permissions enforced server-side.
-6. Single-user mode remains unaffected.
+1. Users can define custom agents.
+2. Agents operate within explicit tool boundaries.
+3. AI usage is measurable and capped.
+4. Model selection is configurable.
+5. Extensions can register commands safely.
+6. Platform is extensible without breaking core editor.
 
 --------------------------------------------------
 FINAL INSTRUCTION
 --------------------------------------------------
 
-Do not overbuild enterprise features.
+Do not over-engineer.
 
-Ship minimal, safe, collaborative foundation.
+Implement minimal viable extensible AI platform with:
+- Governance
+- Transparency
+- Cost awareness
+- Safe extensibility
+
+This phase must elevate the product from:
+"AI-powered editor"
+to
+"AI-native development platform".
