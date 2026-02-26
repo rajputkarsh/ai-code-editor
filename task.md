@@ -1,228 +1,190 @@
-# PHASE 6 – Advanced AI & Platform Expansion
+# PHASE 7 – Productization, Authentication & Monetization
 
-You are a senior AI systems + platform architect.
+You are a senior SaaS platform engineer.
 
 We are implementing:
 
-PHASE 6: Advanced AI & Platform Expansion
+PHASE 7: Productization, Authentication & Monetization
 
-This phase transforms the product into an extensible AI development platform.
+This phase must:
+- Wrap value, not modify core value
+- Keep editor + AI architecture untouched
+- Isolate authentication and billing logic
+- Enforce server-side entitlements
 
-Do NOT refactor existing editor, workspace, or collaboration layers.
-Extend the architecture cleanly.
+Do NOT refactor editor internals.
+Do NOT pollute AI/agent logic with auth conditionals.
+All gating must be layered and replaceable.
 
 --------------------------------------------------
 🎯 PHASE GOAL
 --------------------------------------------------
 
-Position the system as:
+Convert the platform from a dev tool into a secure SaaS product with:
 
-- AI-native
-- Extensible
-- Governable
-- Cost-aware
-- Enterprise-ready
-
-AI must remain:
-- Transparent
-- Permission-bound
-- Auditable
+- Public marketing layer
+- OAuth authentication
+- Subscription billing
+- Feature gating
+- Account management
 
 --------------------------------------------------
-9.1 Custom Agents
+7.1 Public Homepage (Marketing Layer)
 --------------------------------------------------
 
-Implement a user-configurable Agent Framework.
-
-1️⃣ Agent Definitions
-Create Agent entity:
-- agentId
-- name
-- description
-- persona (system prompt)
-- allowedTools[]
-- permissionScope
-- createdBy
-- teamScope (optional)
-
-Agents are stored in DB.
-
-2️⃣ User-Defined Workflows
-Agents can:
-- Execute multi-step plans
-- Access repository context
-- Use selected tools
-
-Each agent must define:
-- Allowed actions:
-    - readFiles
-    - writeFiles
-    - commit
-    - createBranch
-    - openPR
-- Requires explicit user approval before write actions.
-
-3️⃣ Tool Configuration
-Define tool registry:
-- FileSystemTool
-- GitTool
-- SearchTool
-- TerminalTool (if allowed)
-- AICompletionTool
-
-Agents must not access tools unless explicitly allowed.
-
-4️⃣ Agent Personas
-Allow user-defined system prompts.
-Ensure:
-- Persona is scoped to that agent only.
-- No global model override.
-
---------------------------------------------------
-9.2 Model & Cost Control
---------------------------------------------------
-
-Implement AI model governance layer.
-
-1️⃣ Model Selection
-- Allow model selection per task:
-    - Chat
-    - Inline completion
-    - Agent mode
-- Store model preference per user or workspace.
-
-2️⃣ Token Usage Tracking
-Track per request:
-- inputTokens
-- outputTokens
-- modelUsed
-- timestamp
-- workspaceId
-- userId
-
-Persist usage in DB.
-
-3️⃣ Cost Controls
 Implement:
-- Soft usage limit per user/team
-- Hard usage limit per billing period
-- Warning threshold at 80%
 
-When limit exceeded:
-- Disable AI features gracefully.
-- Show clear message.
+1️⃣ Public Landing Page at `/`
+- Hero section
+- Feature highlights:
+    - AI-powered code editor
+    - Agent-based development
+    - GitHub integration
+- Pricing teaser (no checkout yet)
+- Primary CTAs:
+    - Sign In
+    - Start Coding
 
-4️⃣ Usage Dashboard
-Provide:
-- Per-user usage
-- Per-workspace usage
-- Per-team usage
-- Model breakdown
+2️⃣ Technical Constraints
+- Use Next.js Server Components
+- Add SEO metadata
+- No design system
+- Keep styling minimal
+
+Do NOT require authentication for `/`.
 
 --------------------------------------------------
-9.3 Plugin & Extension System
+7.2 Authentication & Access Control
 --------------------------------------------------
 
-Implement a minimal extension framework.
+Authentication Strategy:
+- OAuth-first (GitHub)
+- Email login optional (future)
 
-1️⃣ Extension Registry
-Define extension interface:
-- id
-- name
-- commands[]
-- activate(context)
-- permissionScope
+Implementation:
 
-Extensions must:
-- Be sandboxed
-- Not directly access DB
-- Use exposed API layer
+1️⃣ Integrate authentication provider (Clerk or existing auth system).
+2️⃣ Implement centralized auth middleware.
+3️⃣ Protect routes using middleware:
 
-2️⃣ Custom Editor Commands
-Allow extensions to:
-- Register command palette entries
-- Add right-click actions
-- Trigger AI actions
+| Route       | Access Level |
+|------------|-------------|
+| `/`        | Public      |
+| `/editor`  | Auth only   |
+| `/api/*`   | Auth only   |
+| `/webhooks`| Public      |
 
-3️⃣ Framework-Specific Helpers
-Allow predefined extensions such as:
-- React helper
-- Node helper
-- Git workflow helper
+4️⃣ Session Handling
+- Persist user identity
+- Store userId in DB
+- Do NOT pass auth logic into editor components
 
-4️⃣ Internal Tooling Support
-Provide:
-- Stable plugin API
-- Versioned extension interface
-- Extension lifecycle hooks:
-    - onLoad
-    - onWorkspaceChange
-    - onFileSave
+Editor must remain auth-agnostic.
+
+--------------------------------------------------
+7.3 Subscription & Billing (Stripe)
+--------------------------------------------------
+
+Implement Stripe monthly subscription flow.
+
+1️⃣ Plans
+
+Free:
+- Limited AI usage
+- Single workspace
+- Agent mode disabled
+
+Pro:
+- Higher AI limits
+- Agent mode enabled
+- GitHub integration enabled
+
+Team (future placeholder only)
+
+2️⃣ Stripe Integration
+- Create checkout session
+- Handle success/cancel redirects
+- Implement webhook handler:
+    - subscription.created
+    - subscription.updated
+    - subscription.deleted
+
+3️⃣ Persist subscription status in DB:
+- userId
+- plan
+- stripeCustomerId
+- stripeSubscriptionId
+- status
+
+4️⃣ No usage-based billing.
+5️⃣ No annual plans.
+6️⃣ No coupon system.
+
+Keep billing logic isolated under `/billing` module.
+
+--------------------------------------------------
+7.4 Feature Gating & Entitlements
+--------------------------------------------------
+
+Implement centralized entitlement layer.
+
+1️⃣ Define feature flags:
+
+- canUseAgentMode
+- maxAiTokensPerMonth
+- canAccessPrivateRepos
+- maxWorkspaces
+- canUseTeamFeatures
+
+2️⃣ Entitlements must be:
+- Server-enforced
+- Deterministic
+- Based on subscription plan
+
+3️⃣ Enforcement points:
+- Hono middleware
+- Server Actions
+- API endpoints
+
+4️⃣ UI should reflect disabled state but must NOT be sole enforcement layer.
+
+Do NOT:
+- Add plan checks inside core editor logic.
+- Add Stripe logic inside AI engine.
+
+All gating must go through EntitlementService.
+
+--------------------------------------------------
+7.5 User Account & Settings
+--------------------------------------------------
+
+Create `/settings` page with:
+
+- Profile info
+- Connected GitHub account
+- Current plan
+- Billing portal link (Stripe customer portal)
+
+Do NOT implement advanced onboarding.
 
 --------------------------------------------------
 🔐 SECURITY RULES
 --------------------------------------------------
 
-- Agents cannot bypass permission system.
-- Extensions cannot directly mutate workspace without approval.
-- All AI write operations require:
-    - diff preview
-    - explicit user confirmation.
-- Token limits enforced server-side.
-- Model selection validated server-side.
+- Never trust client plan.
+- Always validate entitlement server-side.
+- Stripe webhook must verify signature.
+- No direct Stripe calls from client without server validation.
 
 --------------------------------------------------
-📊 SUCCESS METRICS INSTRUMENTATION
+🚫 NON-GOALS
 --------------------------------------------------
 
-Track:
-
-1️⃣ AI suggestion acceptance rate
-2️⃣ Agent task completion rate
-3️⃣ Average time saved (estimated)
-4️⃣ PR creation velocity (if GitHub linked)
-5️⃣ DAU/WAU retention
-
-Implement event logging system:
-- AI_REQUEST
-- AI_APPLY
-- AGENT_PLAN_CREATED
-- AGENT_PLAN_APPROVED
-- PR_CREATED
-
-Store analytics separately from audit logs.
-
---------------------------------------------------
-🚫 OUT OF SCOPE
---------------------------------------------------
-
-- Native desktop app
-- Mobile editor
-- Offline-first execution
-- Advanced CPU/memory profiling
-- Complex billing integration
-
---------------------------------------------------
-⚠ RISKS & MITIGATIONS (Must Reflect in Code)
---------------------------------------------------
-
-1️⃣ AI hallucinations
-- Always show diff preview before apply.
-
-2️⃣ High LLM costs
-- Enforce token caps.
-- Cache deterministic prompts where possible.
-
-3️⃣ Latency
-- Use streaming responses.
-- Avoid blocking UI.
-
-4️⃣ Trust issues
-- Display agent execution plan before run.
-- Allow step-by-step approval mode.
-
-5️⃣ Git misuse
-- Restrict branch/commit actions by role.
+- Enterprise SSO
+- Usage-based billing
+- Referral systems
+- Analytics dashboards
+- Trials/coupons
 
 --------------------------------------------------
 🧪 QUALITY REQUIREMENTS
@@ -230,40 +192,39 @@ Store analytics separately from audit logs.
 
 - TypeScript strict
 - No any
-- Clear separation:
-    - Agent Engine
-    - Model Gateway
-    - Extension System
-    - Cost Tracking
-- Add architectural comments explaining:
-    - Agent permission boundary
-    - Token accounting logic
-    - Plugin isolation strategy
+- Clear separation of modules:
+
+    /auth
+    /billing
+    /entitlements
+    /marketing
+    /editor (unchanged)
+
+- Add comments explaining:
+    - Why editor remains auth-agnostic
+    - Why entitlements are centralized
+    - Why billing is isolated
 
 --------------------------------------------------
-✅ EXPECTED RESULT
+✅ PHASE EXIT CRITERIA
 --------------------------------------------------
 
-1. Users can define custom agents.
-2. Agents operate within explicit tool boundaries.
-3. AI usage is measurable and capped.
-4. Model selection is configurable.
-5. Extensions can register commands safely.
-6. Platform is extensible without breaking core editor.
+1. Public homepage live.
+2. Editor protected behind authentication.
+3. Users can subscribe to Pro.
+4. Features gated by plan.
+5. Stripe webhook safely updates subscription state.
+6. Core AI/editor architecture remains untouched.
 
 --------------------------------------------------
 FINAL INSTRUCTION
 --------------------------------------------------
 
-Do not over-engineer.
+This phase wraps value — it does not create value.
 
-Implement minimal viable extensible AI platform with:
-- Governance
-- Transparency
-- Cost awareness
-- Safe extensibility
+Protect:
+- Developer flow
+- AI architecture
+- Agent safety model
 
-This phase must elevate the product from:
-"AI-powered editor"
-to
-"AI-native development platform".
+Monetization must never compromise platform integrity.

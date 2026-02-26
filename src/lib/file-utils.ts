@@ -16,11 +16,10 @@ export const detectLanguage = (filename: string): string => {
     const ext = filename.split('.').pop()?.toLowerCase();
     switch (ext) {
         case 'js':
-        case 'jsx':
-            return 'javascript';
         case 'ts':
+        case 'jsx':
         case 'tsx':
-            return 'typescript';
+            return 'javascript';
         case 'py':
             return 'python';
         case 'html':
