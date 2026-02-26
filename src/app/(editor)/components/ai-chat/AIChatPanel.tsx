@@ -25,6 +25,7 @@ import { Modal } from '@/components/ui/Modal';
 import { generateGitHubDraft, type AgentGitHubDraft } from '@/lib/ai/agent/github-draft';
 import { parseGitHubUrl } from '@/lib/github/repository';
 import { buildDeterministicBranchName } from '@/lib/github/branch-naming';
+import { getClientModelPreference } from '@/lib/ai/platform/client-preferences';
 
 interface AIChatPanelProps {
     onTemplateSelect?: (template: PromptTemplate) => void;
@@ -338,6 +339,8 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
                 },
                 body: JSON.stringify({
                     messages: currentMessages,
+                    workspaceId: workspace?.metadata.id,
+                    model: getClientModelPreference('chat'),
                 }),
             });
 
@@ -485,6 +488,8 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
                     .filter((file) => file.type === 'file')
                     .map((file) => file.path),
                 permissions: agentPermissions,
+                workspaceId: workspace?.metadata.id,
+                model: getClientModelPreference('agent_mode'),
             });
             setAgentPlan(plan);
             setAgentStage('awaiting_plan_approval');
@@ -529,6 +534,8 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
                     permissions: agentPermissions,
                     existingFiles: workspaceFiles,
                     fileContents,
+                    workspaceId: workspace?.metadata.id,
+                    model: getClientModelPreference('agent_mode'),
                 });
 
                 setAgentStepResult(result);
@@ -629,6 +636,8 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
                 repoFullName: `${githubRepo.owner}/${githubRepo.repo}`,
                 baseBranch: selectedBaseBranch,
                 changes: agentAppliedChanges,
+                workspaceId: workspace?.metadata.id,
+                model: getClientModelPreference('agent_mode'),
             });
             setGitHubDraft(draft);
             setGitHubStage('awaiting_review');
@@ -1324,5 +1333,3 @@ export function AIChatPanel({ onTemplateSelect, onClose }: AIChatPanelProps) {
 
 // Re-export ChatMessage type for use in this component
 import { ChatMessage as ChatMessageType } from '@/lib/ai/types';
-
-

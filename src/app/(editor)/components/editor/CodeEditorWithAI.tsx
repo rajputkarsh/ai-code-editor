@@ -18,6 +18,8 @@ import { useInlineAI } from '@/app/(editor)/stores/inline-ai-state';
 import { useSelectionState } from '@/app/(editor)/stores/selection-state';
 import { detectLanguage } from '@/lib/file-utils';
 import { useToast } from '@/components/ui/Toast';
+import { useWorkspace } from '@/app/(editor)/stores/workspace-provider';
+import { getClientModelPreference } from '@/lib/ai/platform/client-preferences';
 
 interface CodeEditorWithAIProps {
     fileId: string;
@@ -27,6 +29,7 @@ export const CodeEditorWithAI: React.FC<CodeEditorWithAIProps> = ({ fileId }) =>
     const toast = useToast();
     const { files, updateFileContent } = useFileSystem();
     const { selection } = useSelectionState();
+    const { workspace } = useWorkspace();
     const { setLoadingAction, addPromptToHistory } = useInlineAI();
     
     // Code action menu state
@@ -65,6 +68,8 @@ export const CodeEditorWithAI: React.FC<CodeEditorWithAIProps> = ({ fileId }) =>
                     language,
                     code: file.content || '',
                     selectedCode: selection?.text,
+                    workspaceId: workspace?.metadata.id,
+                    model: getClientModelPreference('chat'),
                 }),
             });
             
@@ -158,4 +163,3 @@ export const CodeEditorWithAI: React.FC<CodeEditorWithAIProps> = ({ fileId }) =>
         </>
     );
 };
-

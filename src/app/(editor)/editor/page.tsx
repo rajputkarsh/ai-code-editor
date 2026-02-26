@@ -27,6 +27,13 @@ import { useEditorStatePersistence } from '../stores/editor-persistence';
 import { TerminalPanel } from '../components/terminal/TerminalPanel';
 import { LivePreviewPanel } from '../components/preview/LivePreviewPanel';
 import { PreviewManager } from '@/lib/preview/preview-manager';
+import { AIUsageModal } from '../components/layout/AIUsageModal';
+import {
+    ClientAITaskType,
+    ClientModelId,
+    getClientModelPreferences,
+    setClientModelPreference,
+} from '@/lib/ai/platform/client-preferences';
 
 const EditorArea = () => {
     const { activeTabId, activeSecondaryTabId, isSplit, tabs, activePaneForFileOpen, setActivePaneForFileOpen } = useEditorState();
@@ -159,6 +166,13 @@ export default function EditorPage() {
     const [isPromptHistoryOpen, setIsPromptHistoryOpen] = useState(false);
     const [isGitHubImportOpen, setIsGitHubImportOpen] = useState(false);
     const [isImportingRepo, setIsImportingRepo] = useState(false);
+    const [isUsageModalOpen, setIsUsageModalOpen] = useState(false);
+    const [modelTaskType, setModelTaskType] = useState<ClientAITaskType>('chat');
+    const [modelScope, setModelScope] = useState<'workspace' | 'user'>('workspace');
+    const [isSavingModel, setIsSavingModel] = useState(false);
+    const [modelPreferences, setModelPreferences] = useState<Record<ClientAITaskType, ClientModelId>>(
+        getClientModelPreferences
+    );
     
     // Preview state
     const [previewState, setPreviewState] = useState({
@@ -197,6 +211,87 @@ export default function EditorPage() {
     const { selection, hasSelection } = useSelectionState();
     const { setLoadingAction, setLoadingExplanation, addPromptToHistory } = useInlineAI();
     const toast = useToast();
+    const selectedModel = modelPreferences[modelTaskType];
+
+    React.useEffect(() => {
+        const handleModelPreferenceChanged = () => {
+            setModelPreferences(getClientModelPreferences());
+        };
+
+        window.addEventListener('ai-platform:model-preference-changed', handleModelPreferenceChanged);
+        return () => {
+            window.removeEventListener('ai-platform:model-preference-changed', handleModelPreferenceChanged);
+        };
+    }, []);
+
+    React.useEffect(() => {
+        const workspaceId = workspace?.metadata.id;
+
+        const loadResolvedModels = async () => {
+            try {
+                const taskTypes: ClientAITaskType[] = ['chat', 'inline_completion', 'agent_mode'];
+                const responses = await Promise.all(
+                    taskTypes.map((taskType) =>
+                        fetch('/api/ai-platform/models/resolve', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ taskType, workspaceId }),
+                        })
+                    )
+                );
+
+                const allOk = responses.every((response) => response.ok);
+                if (!allOk) return;
+
+                const payloads = await Promise.all(responses.map((response) => response.json()));
+                const next = getClientModelPreferences();
+                taskTypes.forEach((taskType, index) => {
+                    const resolvedModel = payloads[index]?.model as ClientModelId | undefined;
+                    if (resolvedModel) {
+                        next[taskType] = resolvedModel;
+                        setClientModelPreference(taskType, resolvedModel);
+                    }
+                });
+                setModelPreferences(next);
+            } catch {
+                // Keep local preference fallback when resolve API is unavailable.
+            }
+        };
+
+        loadResolvedModels();
+    }, [workspace?.metadata.id]);
+
+    const handleModelChange = React.useCallback(
+        async (model: ClientModelId) => {
+            setClientModelPreference(modelTaskType, model);
+            setModelPreferences((prev) => ({ ...prev, [modelTaskType]: model }));
+            setIsSavingModel(true);
+
+            try {
+                const workspaceId = modelScope === 'workspace' ? workspace?.metadata.id : undefined;
+                const response = await fetch('/api/ai-platform/models/preference', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        taskType: modelTaskType,
+                        model,
+                        workspaceId,
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to save model preference');
+                }
+                toast.success(`Model saved for ${modelTaskType} (${modelScope})`, 2000);
+            } catch (error) {
+                console.error('Failed to save model preference:', error);
+                toast.error('Failed to save model preference');
+            } finally {
+                setIsSavingModel(false);
+            }
+        },
+        [modelScope, modelTaskType, toast, workspace?.metadata.id]
+    );
 
     // Auto-open preview for newly created template projects.
     React.useEffect(() => {
@@ -429,6 +524,8 @@ export default function EditorPage() {
                     language,
                     code: activeFile.content || '',
                     selectedCode: selection?.text,
+                    workspaceId: workspace?.metadata.id,
+                    model: modelPreferences.chat,
                 }),
             });
             
@@ -490,6 +587,8 @@ export default function EditorPage() {
                     language,
                     code: targetCode,
                     scope,
+                    workspaceId: workspace?.metadata.id,
+                    model: modelPreferences.chat,
                 }),
             });
             
@@ -805,6 +904,14 @@ export default function EditorPage() {
                             onPromptHistoryClick={() => setIsPromptHistoryOpen(true)}
                             onExplainClick={handleExplainCode}
                             onGitHubClick={() => setIsGitHubImportOpen(true)}
+                            modelTaskType={modelTaskType}
+                            selectedModel={selectedModel}
+                            modelScope={modelScope}
+                            isSavingModel={isSavingModel}
+                            onModelTaskTypeChange={setModelTaskType}
+                            onModelChange={handleModelChange}
+                            onModelScopeChange={setModelScope}
+                            onUsageClick={() => setIsUsageModalOpen(true)}
                         />
                         <div className="flex-1 min-h-0">
                             <EditorArea />
@@ -894,6 +1001,11 @@ export default function EditorPage() {
                 }}
                 onImport={handleGitHubImport}
                 isImporting={isImportingRepo}
+            />
+
+            <AIUsageModal
+                isOpen={isUsageModalOpen}
+                onClose={() => setIsUsageModalOpen(false)}
             />
             
             {/* Full Page Loading Overlay - Workspace Restore */}

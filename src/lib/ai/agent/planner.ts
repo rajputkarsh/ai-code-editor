@@ -22,12 +22,16 @@ interface AgentPlannerInput {
     task: string;
     workspaceFiles: string[];
     permissions: AgentPermissionState;
+    workspaceId?: string;
+    model?: string;
 }
 
 export async function generateAgentPlan({
     task,
     workspaceFiles,
     permissions,
+    workspaceId,
+    model,
 }: AgentPlannerInput): Promise<AgentPlan> {
     const systemPrompt = [
         'You are an autonomous planning assistant for a code editor.',
@@ -62,6 +66,8 @@ export async function generateAgentPlan({
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt },
             ],
+            workspaceId,
+            model,
         }),
     });
 

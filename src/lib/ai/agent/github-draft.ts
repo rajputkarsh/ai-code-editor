@@ -47,8 +47,10 @@ export async function generateGitHubDraft(options: {
   repoFullName: string;
   baseBranch: string;
   changes: AgentAppliedChange[];
+  workspaceId?: string;
+  model?: string;
 }): Promise<AgentGitHubDraft> {
-  const { task, repoFullName, baseBranch, changes } = options;
+  const { task, repoFullName, baseBranch, changes, workspaceId, model } = options;
   const fileList = Array.from(new Set(changes.map((change) => change.filePath)));
   const changeSummary = formatChanges(changes);
 
@@ -81,6 +83,8 @@ export async function generateGitHubDraft(options: {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
+      workspaceId,
+      model,
     }),
   });
 

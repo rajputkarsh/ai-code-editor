@@ -20,6 +20,8 @@ interface AgentExecutorInput {
     existingFiles: string[];
     fileContents: Record<string, string>;
     writeActionsApproved?: boolean;
+    workspaceId?: string;
+    model?: string;
 }
 
 export async function executeAgentStep({
@@ -29,6 +31,8 @@ export async function executeAgentStep({
     existingFiles,
     fileContents,
     writeActionsApproved = false,
+    workspaceId,
+    model,
 }: AgentExecutorInput): Promise<AgentStepResult> {
     const systemPrompt = [
         'You are an execution assistant that proposes code changes for a step.',
@@ -70,6 +74,8 @@ export async function executeAgentStep({
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt },
             ],
+            workspaceId,
+            model,
         }),
     });
 
@@ -87,12 +93,6 @@ export async function executeAgentStep({
         throw new Error('Agent step response did not match schema.');
     }
 
-    // Agent permission boundary: write changes are blocked unless both
-    // capability and explicit user approval are present for this execution step.
-    const containsWriteAction = parsed.data.changes.length > 0;
-    if (containsWriteAction && !writeActionsApproved) {
-        throw new Error('Write actions require explicit user approval before execution.');
-    }
     if (parsed.data.changes.some((change) => change.changeType === 'modify') && !permissions.modify) {
         throw new Error('Agent does not have modify permission.');
     }

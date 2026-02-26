@@ -11,7 +11,8 @@
  */
 
 import React from 'react';
-import { PanelLeft, MessageSquare, Wand2, Clock, FileText, Github, Terminal, Monitor } from 'lucide-react';
+import { PanelLeft, MessageSquare, Wand2, Clock, FileText, Github, Terminal, Monitor, BarChart3 } from 'lucide-react';
+import { ClientAITaskType, ClientModelId, CLIENT_AI_TASK_TYPES, CLIENT_MODEL_IDS } from '@/lib/ai/platform/client-preferences';
 import { WorkspaceSelector } from './WorkspaceSelector';
 
 interface EditorToolbarProps {
@@ -27,6 +28,14 @@ interface EditorToolbarProps {
     onPromptHistoryClick?: () => void;
     onExplainClick?: () => void;
     onGitHubClick?: () => void;
+    modelTaskType: ClientAITaskType;
+    selectedModel: ClientModelId;
+    modelScope: 'workspace' | 'user';
+    isSavingModel: boolean;
+    onModelTaskTypeChange: (taskType: ClientAITaskType) => void;
+    onModelChange: (model: ClientModelId) => void;
+    onModelScopeChange: (scope: 'workspace' | 'user') => void;
+    onUsageClick: () => void;
 }
 
 export function EditorToolbar({
@@ -42,6 +51,14 @@ export function EditorToolbar({
     onPromptHistoryClick,
     onExplainClick,
     onGitHubClick,
+    modelTaskType,
+    selectedModel,
+    modelScope,
+    isSavingModel,
+    onModelTaskTypeChange,
+    onModelChange,
+    onModelScopeChange,
+    onUsageClick,
 }: EditorToolbarProps) {
     return (
         <div className="flex items-center justify-between h-8 px-4 bg-[#1e1e1e] border-b border-neutral-800 text-neutral-300">
@@ -85,6 +102,48 @@ export function EditorToolbar({
                         <Github className="w-3 h-3" />
                     </button>
                 )}
+                <div className="w-px h-4 bg-neutral-700 mx-1" />
+                <select
+                    value={modelTaskType}
+                    onChange={(event) => onModelTaskTypeChange(event.target.value as ClientAITaskType)}
+                    className="h-6 rounded bg-neutral-900 border border-neutral-700 text-[11px] px-2 text-neutral-200"
+                    title="Model task scope"
+                >
+                    {CLIENT_AI_TASK_TYPES.map((taskType) => (
+                        <option key={taskType} value={taskType}>
+                            {taskType}
+                        </option>
+                    ))}
+                </select>
+                <select
+                    value={selectedModel}
+                    onChange={(event) => onModelChange(event.target.value as ClientModelId)}
+                    className="h-6 rounded bg-neutral-900 border border-neutral-700 text-[11px] px-2 text-neutral-200"
+                    title="Select AI model"
+                    disabled={isSavingModel}
+                >
+                    {CLIENT_MODEL_IDS.map((modelId) => (
+                        <option key={modelId} value={modelId}>
+                            {modelId}
+                        </option>
+                    ))}
+                </select>
+                <select
+                    value={modelScope}
+                    onChange={(event) => onModelScopeChange(event.target.value as 'workspace' | 'user')}
+                    className="h-6 rounded bg-neutral-900 border border-neutral-700 text-[11px] px-2 text-neutral-300"
+                    title="Preference scope"
+                >
+                    <option value="workspace">Workspace</option>
+                    <option value="user">User</option>
+                </select>
+                <button
+                    onClick={onUsageClick}
+                    className="p-1 rounded-md transition-colors text-neutral-400 hover:text-white hover:bg-neutral-800"
+                    title="AI usage dashboard"
+                >
+                    <BarChart3 className="w-3 h-3" />
+                </button>
             </div>
 
             {/* Right section - Panel toggles */}

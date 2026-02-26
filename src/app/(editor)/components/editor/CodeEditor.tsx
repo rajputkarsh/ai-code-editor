@@ -7,6 +7,7 @@ import { useSelectionState } from '@/app/(editor)/stores/selection-state';
 import { useWorkspace } from '@/app/(editor)/stores/workspace-provider';
 import { useInlineAI } from '@/app/(editor)/stores/inline-ai-state';
 import { detectLanguage } from '@/lib/file-utils';
+import { getClientModelPreference } from '@/lib/ai/platform/client-preferences';
 import type { editor as MonacoEditor, languages } from 'monaco-editor';
 
 interface CodeEditorProps {
@@ -16,7 +17,7 @@ interface CodeEditorProps {
 export const CodeEditor = ({ fileId }: CodeEditorProps) => {
     const { files, updateFileContent } = useFileSystem();
     const { setSelection, clearSelection } = useSelectionState();
-    const { markDirty } = useWorkspace();
+    const { markDirty, workspace } = useWorkspace();
     const { isLoadingCompletion, setLoadingCompletion, setCurrentCompletion, addPromptToHistory } = useInlineAI();
     const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
     const [inlineCompletionText, setInlineCompletionText] = useState<string | null>(null);
@@ -141,6 +142,8 @@ export const CodeEditor = ({ fileId }: CodeEditorProps) => {
                     codeBeforeCursor,
                     codeAfterCursor,
                     lineNumber,
+                    workspaceId: workspace?.metadata.id,
+                    model: getClientModelPreference('inline_completion'),
                 }),
             });
             
