@@ -7,8 +7,11 @@
  * with strict limits (timeout, no daemons, workspace-only access).
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Play, Square, Sparkles, Trash2, Terminal as TerminalIcon, X } from 'lucide-react';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
 import { useToast } from '@/components/ui/Toast';
 import { useWorkspace } from '../../stores/workspace-provider';
 import type { TerminalAssistKind, TerminalStreamEvent } from '@/lib/terminal/types';
@@ -19,13 +22,6 @@ interface TerminalPanelProps {
     onClose: () => void;
 }
 
-type TerminalLine = {
-    id: string;
-    type: TerminalStreamEvent['type'];
-    text: string;
-    timestamp: number;
-};
-
 const quickCommands = [
     { label: 'npm install', command: 'npm install' },
     { label: 'npm run dev', command: 'npm run dev' },
@@ -35,16 +31,16 @@ const quickCommands = [
 const formatExitLine = (exitCode: number, durationMs: number) =>
     `Process exited with code ${exitCode} after ${Math.max(durationMs, 0)}ms.`;
 
-const getLineColor = (type: TerminalLine['type']) => {
-    if (type === 'error') return 'text-red-400';
-    if (type === 'status') return 'text-blue-300';
-    if (type === 'exit') return 'text-yellow-300';
-    return 'text-neutral-100';
+const ANSI_RESET = '\x1b[0m';
+const ANSI_COLORS = {
+    status: '\x1b[38;5;117m',
+    error: '\x1b[38;5;203m',
+    exit: '\x1b[38;5;222m',
 };
+const MAX_TRANSCRIPT_CHARS = 200_000;
 
 export function TerminalPanel({ onClose }: TerminalPanelProps) {
     const [command, setCommand] = useState('');
-    const [lines, setLines] = useState<TerminalLine[]>([]);
     const [isRunning, setIsRunning] = useState(false);
     const [isAssisting, setIsAssisting] = useState(false);
     const [lastCommand, setLastCommand] = useState<string | null>(null);
@@ -54,8 +50,11 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     } | null>(null);
 
     const { vfs, activeWorkspaceId } = useWorkspace();
-    const outputRef = useRef<HTMLDivElement | null>(null);
+    const terminalHostRef = useRef<HTMLDivElement | null>(null);
+    const terminalRef = useRef<Terminal | null>(null);
+    const fitAddonRef = useRef<FitAddon | null>(null);
     const abortRef = useRef<AbortController | null>(null);
+    const transcriptRef = useRef('');
     const resizeStateRef = useRef<{ startY: number; startHeight: number } | null>(null);
     const toast = useToast();
     const [panelHeight, setPanelHeight] = useState(256);
@@ -63,10 +62,29 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     const MIN_HEIGHT = 160;
     const MAX_HEIGHT = 720;
 
-    useEffect(() => {
-        if (!outputRef.current) return;
-        outputRef.current.scrollTop = outputRef.current.scrollHeight;
-    }, [lines]);
+    const writeLine = (text: string, type: 'status' | 'error' | 'exit' | 'output') => {
+        const terminal = terminalRef.current;
+        if (!terminal) return;
+
+        if (type === 'output') {
+            terminal.write(text);
+            return;
+        }
+
+        const colorPrefix = ANSI_COLORS[type];
+        terminal.writeln(`${colorPrefix}${text}${ANSI_RESET}`);
+    };
+
+    const appendTranscript = (text: string) => {
+        if (!text) return;
+        const nextTranscript = `${transcriptRef.current}${text}`;
+        if (nextTranscript.length <= MAX_TRANSCRIPT_CHARS) {
+            transcriptRef.current = nextTranscript;
+            return;
+        }
+
+        transcriptRef.current = nextTranscript.slice(nextTranscript.length - MAX_TRANSCRIPT_CHARS);
+    };
 
     const updateHeight = (clientY: number) => {
         if (!resizeStateRef.current) return;
@@ -103,32 +121,60 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
         };
     }, []);
 
-    const combinedOutput = useMemo(
-        () => lines.map((line) => line.text).join('\n'),
-        [lines]
-    );
+    useEffect(() => {
+        const host = terminalHostRef.current;
+        if (!host || terminalRef.current) return;
 
-    const appendLine = (line: TerminalLine) => {
-        setLines((prev) => [...prev, line]);
-    };
+        const terminal = new Terminal({
+            cursorBlink: true,
+            convertEol: true,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+            fontSize: 12,
+            lineHeight: 1.3,
+            theme: {
+                background: '#0f0f0f',
+                foreground: '#f5f5f5',
+                cursor: '#f5f5f5',
+                selectionBackground: '#334155',
+            },
+            scrollback: 5000,
+        });
+        const fitAddon = new FitAddon();
+        terminal.loadAddon(fitAddon);
+        terminal.open(host);
+        fitAddon.fit();
+        terminal.writeln('Run a script to see output here. Supported: npm / yarn / pnpm.');
+
+        const resizeObserver = new ResizeObserver(() => {
+            fitAddon.fit();
+        });
+        resizeObserver.observe(host);
+
+        terminalRef.current = terminal;
+        fitAddonRef.current = fitAddon;
+
+        return () => {
+            resizeObserver.disconnect();
+            terminal.dispose();
+            terminalRef.current = null;
+            fitAddonRef.current = null;
+        };
+    }, []);
+
+    useEffect(() => {
+        fitAddonRef.current?.fit();
+    }, [panelHeight]);
 
     const handleEvent = (event: TerminalStreamEvent) => {
         if (event.type === 'exit') {
-            appendLine({
-                id: crypto.randomUUID(),
-                type: 'exit',
-                text: formatExitLine(event.exitCode, event.durationMs),
-                timestamp: Date.now(),
-            });
+            const exitLine = formatExitLine(event.exitCode, event.durationMs);
+            writeLine(exitLine, 'exit');
+            appendTranscript(`${exitLine}\n`);
             return;
         }
 
-        appendLine({
-            id: crypto.randomUUID(),
-            type: event.type,
-            text: event.text,
-            timestamp: Date.now(),
-        });
+        writeLine(event.text, event.type);
+        appendTranscript(event.type === 'output' ? event.text : `${event.text}\n`);
     };
 
     const handleRun = async () => {
@@ -153,12 +199,8 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
         const controller = new AbortController();
         abortRef.current = controller;
 
-        appendLine({
-            id: crypto.randomUUID(),
-            type: 'status',
-            text: `$ ${trimmed}`,
-            timestamp: Date.now(),
-        });
+        writeLine(`$ ${trimmed}`, 'status');
+        appendTranscript(`$ ${trimmed}\n`);
 
         try {
             await runTerminalCommand({
@@ -176,14 +218,9 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
             const message =
                 error instanceof Error ? error.message : 'Terminal execution failed.';
 
-            appendLine({
-                id: crypto.randomUUID(),
-                type: 'error',
-                text: controller.signal.aborted
-                    ? 'Execution cancelled by user.'
-                    : message,
-                timestamp: Date.now(),
-            });
+            const errorText = controller.signal.aborted ? 'Execution cancelled by user.' : message;
+            writeLine(errorText, 'error');
+            appendTranscript(`${errorText}\n`);
             setIsRunning(false);
         } finally {
             abortRef.current = null;
@@ -195,11 +232,13 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     };
 
     const handleClear = () => {
-        setLines([]);
+        terminalRef.current?.clear();
         setAssistResponse(null);
+        transcriptRef.current = '';
     };
 
     const handleAssist = async (kind: TerminalAssistKind) => {
+        const combinedOutput = transcriptRef.current;
         if (!combinedOutput.trim()) {
             toast.warning('Run a command to generate output first.');
             return;
@@ -305,20 +344,10 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
                 </div>
             </div>
 
-            <div ref={outputRef} className="flex-1 overflow-y-auto p-3 font-mono text-xs space-y-1">
-                {lines.length === 0 ? (
-                    <div className="text-neutral-500">
-                        Run a script to see output here. Supported: npm / yarn / pnpm.
-                    </div>
-                ) : (
-                    lines.map((line) => (
-                        <div key={line.id} className={getLineColor(line.type)}>
-                            {line.text}
-                        </div>
-                    ))
-                )}
+            <div className="flex-1 overflow-hidden px-3 pb-3 pt-2">
+                <div ref={terminalHostRef} className="h-full w-full overflow-hidden rounded border border-neutral-800" />
                 {assistResponse && (
-                    <div className="mt-3 border border-neutral-700 rounded bg-[#141414] p-3 text-neutral-200">
+                    <div className="mt-3 border border-neutral-700 rounded bg-[#141414] p-3 text-neutral-200 max-h-44 overflow-y-auto">
                         <div className="text-[11px] uppercase tracking-wide text-neutral-400 mb-2">
                             AI {assistResponse.kind}
                         </div>
