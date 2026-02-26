@@ -1,4 +1,6 @@
 import { auth, currentUser } from '@clerk/nextjs/server';
+import type { Entitlements } from '@/lib/entitlements/types';
+import { getEntitlementsForUser } from '@/lib/entitlements/service';
 
 /**
  * Server-side Auth Utilities
@@ -69,5 +71,26 @@ export async function getCurrentUser() {
 export async function isAuthenticated(): Promise<boolean> {
   const userId = await getCurrentUserId();
   return userId !== null;
+}
+
+export async function getCurrentUserEntitlements(): Promise<Entitlements | null> {
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
+  return getEntitlementsForUser(userId);
+}
+
+export async function requireEntitlement(
+  key: keyof Omit<Entitlements, 'plan'>,
+  errorMessage: string
+): Promise<void> {
+  const entitlements = await getCurrentUserEntitlements();
+  if (!entitlements) {
+    throw new Error('Authentication required');
+  }
+  const value = entitlements[key];
+  const allowed = typeof value === 'boolean' ? value : Boolean(value);
+  if (!allowed) {
+    throw new Error(errorMessage);
+  }
 }
 

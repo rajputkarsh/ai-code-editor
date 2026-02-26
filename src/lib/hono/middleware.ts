@@ -1,7 +1,8 @@
 import { createMiddleware } from 'hono/factory';
 import { logger } from 'hono/logger';
 import { cors } from 'hono/cors';
-import { auth } from '@clerk/nextjs/server';
+import { auth, currentUser } from '@clerk/nextjs/server';
+import { upsertAppUser } from '@/lib/auth/user-store';
 
 /**
  * Extend Hono context to include userId
@@ -33,6 +34,14 @@ export const authMiddleware = createMiddleware(async (c, next) => {
         }, 401);
     }
     
+    const user = await currentUser();
+    await upsertAppUser({
+        userId,
+        email: user?.emailAddresses[0]?.emailAddress ?? null,
+        fullName: [user?.firstName, user?.lastName].filter(Boolean).join(' ') || null,
+        avatarUrl: user?.imageUrl ?? null,
+    });
+
     // Store userId in Hono context for use in route handlers
     c.set('userId', userId);
     

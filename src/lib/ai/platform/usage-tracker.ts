@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, lte, or } from 'drizzle-orm';
 import { getDb, schema } from '@/lib/db';
 import { ensureTeamRole, listAccessibleTeamIds } from '@/lib/collaboration/operations';
 import { AITaskType, UsageSnapshot } from './types';
+import { getEntitlementsForUser } from '@/lib/entitlements/service';
 
 const {
   aiUsageEvents: aiUsageEventsTable,
@@ -35,8 +36,15 @@ interface UsageLimitRow {
 }
 
 const DEFAULT_WARNING_THRESHOLD = 80;
-const DEFAULT_SOFT_LIMIT = 100_000;
-const DEFAULT_HARD_LIMIT = 125_000;
+
+function getPlanBackedLimits(maxAiTokensPerMonth: number): {
+  softLimit: number;
+  hardLimit: number;
+} {
+  const hardLimit = maxAiTokensPerMonth;
+  const softLimit = Math.floor(hardLimit * 0.8);
+  return { softLimit, hardLimit };
+}
 
 function buildUsageSnapshot(limit: UsageLimitRow, usedTokens: number): UsageSnapshot {
   const warningCap = Math.floor((limit.hardLimitTokens * limit.warningThresholdPercent) / 100);
@@ -62,6 +70,8 @@ async function getOrCreateUserUsageLimit(userId: string, now: Date): Promise<Usa
   if (!db) {
     throw new Error('Database not configured');
   }
+  const entitlements = await getEntitlementsForUser(userId);
+  const planLimits = getPlanBackedLimits(entitlements.maxAiTokensPerMonth);
   const { start, end } = getCurrentBillingPeriod(now);
 
   const existing = await db
@@ -78,6 +88,27 @@ async function getOrCreateUserUsageLimit(userId: string, now: Date): Promise<Usa
     .limit(1);
 
   if (existing[0]) {
+    const current = existing[0];
+    if (
+      current.softLimitTokens !== planLimits.softLimit ||
+      current.hardLimitTokens !== planLimits.hardLimit
+    ) {
+      await db
+        .update(aiUsageLimitsTable)
+        .set({
+          softLimitTokens: planLimits.softLimit,
+          hardLimitTokens: planLimits.hardLimit,
+          updatedAt: now,
+        })
+        .where(eq(aiUsageLimitsTable.id, current.id));
+
+      return {
+        ...current,
+        softLimitTokens: planLimits.softLimit,
+        hardLimitTokens: planLimits.hardLimit,
+      };
+    }
+
     return existing[0];
   }
 
@@ -89,8 +120,8 @@ async function getOrCreateUserUsageLimit(userId: string, now: Date): Promise<Usa
       teamId: null,
       billingPeriodStart: start,
       billingPeriodEnd: end,
-      softLimitTokens: DEFAULT_SOFT_LIMIT,
-      hardLimitTokens: DEFAULT_HARD_LIMIT,
+      softLimitTokens: planLimits.softLimit,
+      hardLimitTokens: planLimits.hardLimit,
       warningThresholdPercent: DEFAULT_WARNING_THRESHOLD,
       aiDisabled: false,
       createdAt: now,

@@ -11,6 +11,46 @@
 import { pgTable, text, timestamp, uuid, jsonb, uniqueIndex, integer, boolean } from 'drizzle-orm/pg-core';
 
 /**
+ * App Users Table
+ *
+ * Clerk remains the source of truth for authentication, but we persist a local
+ * row keyed by Clerk userId so billing and entitlements can be enforced with
+ * server-side joins and deterministic ownership.
+ */
+export const appUsers = pgTable('app_users', {
+  userId: text('user_id').primaryKey(), // Clerk user ID
+  email: text('email'),
+  fullName: text('full_name'),
+  avatarUrl: text('avatar_url'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type AppUser = typeof appUsers.$inferSelect;
+export type NewAppUser = typeof appUsers.$inferInsert;
+
+/**
+ * User subscriptions persisted from Stripe webhooks.
+ *
+ * Billing is intentionally isolated from editor and AI internals. Core editor
+ * logic never imports Stripe primitives and consumes only entitlements.
+ */
+export const userSubscriptions = pgTable('user_subscriptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull().unique(),
+  plan: text('plan').notNull().default('free'), // free | pro | team
+  status: text('status').notNull().default('inactive'),
+  stripeCustomerId: text('stripe_customer_id').unique(),
+  stripeSubscriptionId: text('stripe_subscription_id').unique(),
+  currentPeriodEnd: timestamp('current_period_end'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export type UserSubscription = typeof userSubscriptions.$inferSelect;
+export type NewUserSubscription = typeof userSubscriptions.$inferInsert;
+
+/**
  * Workspaces Table
  * 
  * Stores user workspaces with their file system and editor state.

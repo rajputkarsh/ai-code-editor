@@ -12,6 +12,8 @@ export default function EditorRouteLayout({
 }: {
     children: React.ReactNode;
 }) {
+    // Editor remains auth-agnostic by design: route/middleware decides who can
+    // enter this tree. If this layout renders, identity has already been validated.
     return (
         <WorkspaceProvider>
             <FileSystemProvider>

@@ -5,19 +5,25 @@
  * our own OAuth flow. Much simpler!
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { AppVariables } from '../middleware';
 import {
-  getGitHubTokenFromClerk,
   getGitHubUserFromClerk,
   hasGitHubConnected,
   githubApiRequest,
 } from '@/lib/github/clerk-auth';
 import { computeAgentBranchName, publishAgentChanges, type AgentGitHubChange } from '@/lib/github/agent-operations';
+import { getEntitlementsForUser } from '@/lib/entitlements/service';
+import { requireEntitlement } from '@/lib/entitlements/hono';
 
 const app = new Hono<{ Variables: AppVariables }>();
+
+async function getRequestEntitlements(c: Context<{ Variables: AppVariables }>) {
+  const userId = c.get('userId');
+  return getEntitlementsForUser(userId);
+}
 
 /**
  * GET /api/github/auth/status
@@ -52,10 +58,26 @@ app.get('/auth/status', async (c) => {
  */
 app.get('/repositories', async (c) => {
   try {
+    const entitlements = await getRequestEntitlements(c);
     const repos = await githubApiRequest('/user/repos?sort=updated&per_page=100');
     
     return c.json({
-      repositories: repos.map((repo: any) => ({
+      repositories: repos
+        .filter((repo: { private: boolean }) => entitlements.canAccessPrivateRepos || !repo.private)
+        .map((repo: {
+          id: number;
+          name: string;
+          full_name: string;
+          owner: { login: string };
+          description: string | null;
+          private: boolean;
+          default_branch: string;
+          html_url: string;
+          updated_at: string;
+          language: string | null;
+          stargazers_count: number;
+          forks_count: number;
+        }) => ({
         id: repo.id,
         name: repo.name,
         full_name: repo.full_name,
@@ -70,9 +92,10 @@ app.get('/repositories', async (c) => {
         forks: repo.forks_count,
       })),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching repositories:', error);
-    return c.json({ error: error.message || 'Failed to fetch repositories' }, 500);
+    const message = error instanceof Error ? error.message : 'Failed to fetch repositories';
+    return c.json({ error: message }, 500);
   }
 });
 
@@ -86,7 +109,15 @@ app.get('/repository/:owner/:repo', async (c) => {
   const repo = c.req.param('repo');
   
   try {
+    const entitlements = await getRequestEntitlements(c);
     const repository = await githubApiRequest(`/repos/${owner}/${repo}`);
+
+    if (repository.private && !entitlements.canAccessPrivateRepos) {
+      return c.json(
+        { error: 'Private repository access requires the Pro plan.' },
+        403
+      );
+    }
     
     return c.json({
       id: repository.id,
@@ -103,9 +134,10 @@ app.get('/repository/:owner/:repo', async (c) => {
       stars: repository.stargazers_count,
       forks: repository.forks_count,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching repository:', error);
-    return c.json({ error: error.message || 'Failed to fetch repository' }, 500);
+    const message = error instanceof Error ? error.message : 'Failed to fetch repository';
+    return c.json({ error: message }, 500);
   }
 });
 
@@ -316,6 +348,11 @@ const agentPublishSchema = z.object({
  *
  * Permission boundary: caller must only invoke after explicit user approval.
  */
+app.use(
+  '/agent/publish',
+  requireEntitlement('canUseAgentMode', 'Agent mode publishing requires Pro or Team plan.')
+);
+
 app.post(
   '/agent/publish',
   zValidator('json', agentPublishSchema),
@@ -363,4 +400,3 @@ app.post(
 );
 
 export default app;
-

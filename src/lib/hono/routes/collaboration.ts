@@ -23,6 +23,7 @@ import {
   updateTeamPrompt,
 } from '@/lib/collaboration/operations';
 import { collaborationRealtimeStore } from '@/lib/collaboration/realtime';
+import { requireEntitlement } from '@/lib/entitlements/hono';
 
 const teamRoleSchema = z.enum(['OWNER', 'ADMIN', 'EDITOR', 'VIEWER']);
 
@@ -80,6 +81,16 @@ function getUserId(c: Context): string {
 }
 
 export const collaborationApp = new Hono();
+
+collaborationApp.use(
+  '/teams*',
+  requireEntitlement('canUseTeamFeatures', 'Team features are available on the Team plan.')
+);
+
+collaborationApp.use(
+  '/workspaces/:workspaceId/team',
+  requireEntitlement('canUseTeamFeatures', 'Team features are available on the Team plan.')
+);
 
 collaborationApp.post('/teams', zValidator('json', createTeamSchema), async (c) => {
   const userId = getUserId(c);

@@ -22,6 +22,7 @@ import {
   WorkspaceCountLimitExceededError,
 } from './storage-utils';
 import { env } from '@/lib/config/env';
+import { getEntitlementsForUser } from '@/lib/entitlements/service';
 import {
   assertCanDeleteWorkspace,
   assertCanModifyWorkspace,
@@ -117,12 +118,17 @@ export async function createWorkspace(
   if (!db) return null;
 
   try {
+    // Workspace count is entitlement-driven so limits can be changed by plan
+    // without modifying editor internals.
+    const entitlements = await getEntitlementsForUser(userId);
+    const maxWorkspaceCount = entitlements.maxWorkspaces;
+
     // Phase 1.6: Enforce workspace count limit
     const currentCount = await getUserWorkspaceCount(userId);
-    if (currentCount >= env.WORKSPACE_MAX_COUNT_PER_USER) {
+    if (currentCount >= maxWorkspaceCount) {
       throw new WorkspaceCountLimitExceededError(
         currentCount,
-        env.WORKSPACE_MAX_COUNT_PER_USER
+        maxWorkspaceCount
       );
     }
 

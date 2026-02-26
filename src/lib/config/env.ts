@@ -11,6 +11,12 @@ const envSchema = z.object({
     GITHUB_CLIENT_ID: z.string().optional(),
     GITHUB_CLIENT_SECRET: z.string().optional(),
     NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
+
+    // Stripe billing (Phase 7)
+    STRIPE_SECRET_KEY: z.string().optional(),
+    STRIPE_WEBHOOK_SECRET: z.string().optional(),
+    STRIPE_PRO_MONTHLY_PRICE_ID: z.string().optional(),
+    STRIPE_TEAM_MONTHLY_PRICE_ID: z.string().optional(),
     
     // AI Token Limits (with defaults)
     // These limits prevent runaway costs and abuse
@@ -38,6 +44,10 @@ const processEnv = {
     GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID,
     GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    STRIPE_PRO_MONTHLY_PRICE_ID: process.env.STRIPE_PRO_MONTHLY_PRICE_ID,
+    STRIPE_TEAM_MONTHLY_PRICE_ID: process.env.STRIPE_TEAM_MONTHLY_PRICE_ID,
 
     // keys with default fallback values
     AI_MAX_TOKENS_PER_REQUEST: process.env.AI_MAX_TOKENS_PER_REQUEST,

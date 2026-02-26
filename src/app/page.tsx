@@ -1,54 +1,62 @@
-import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
-import styles from "./page.module.css";
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { auth } from '@clerk/nextjs/server';
+import { marketingContent } from '@/lib/marketing/content';
+import styles from './page.module.css';
 
-/**
- * Homepage (Public)
- * 
- * This is the only public-facing page. It provides:
- * - Sign in for existing users
- * - Sign up for new users
- * - Direct link to editor for authenticated users
- * 
- * Note: This component can access auth() because it's a Server Component.
- * Client components (like editor components) should NOT import Clerk.
- */
+export const metadata: Metadata = {
+  title: 'AI Code Editor | AI-Native Coding Workspace',
+  description:
+    'A browser-based AI code editor with agent workflows and GitHub integration.',
+};
+
 export default async function Home() {
   const { userId } = await auth();
-  const isSignedIn = !!userId;
+  const isSignedIn = Boolean(userId);
 
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <div className={styles.intro}>
-          <h1>AI-Powered Code Editor</h1>
-          <p>
-            A browser-based code editor with intelligent AI assistance.
-            Write, refactor, and debug code faster with AI agents.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          {isSignedIn ? (
-            <>
-              <Link href="/editor" className={styles.primary}>
-                Open Editor
-              </Link>
-              <Link href="/sign-in" className={styles.secondary}>
-                Sign Out
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link href="/sign-in" className={styles.primary}>
-                Sign In
-              </Link>
-              <Link href="/sign-up" className={styles.secondary}>
-                Sign Up
-              </Link>
-            </>
-          )}
-        </div>
+        <section className={styles.hero}>
+          <p className={styles.kicker}>AI Code Editor</p>
+          <h1>{marketingContent.hero.title}</h1>
+          <p>{marketingContent.hero.description}</p>
+          <div className={styles.ctas}>
+            <Link href={isSignedIn ? '/editor' : '/sign-in'} className={styles.primary}>
+              Sign In
+            </Link>
+            <Link href="/editor" className={styles.secondary}>
+              Start Coding
+            </Link>
+          </div>
+        </section>
+
+        <section className={styles.features}>
+          <h2>Core capabilities</h2>
+          <div className={styles.grid}>
+            {marketingContent.highlights.map((item) => (
+              <article key={item.title} className={styles.card}>
+                <h3>{item.title}</h3>
+                <p>{item.description}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className={styles.pricing}>
+          <h2>Pricing preview</h2>
+          <div className={styles.grid}>
+            {marketingContent.pricing.map((tier) => (
+              <article key={tier.plan} className={styles.card}>
+                <h3>{tier.plan}</h3>
+                <p className={styles.price}>{tier.price}</p>
+                <p>{tier.teaser}</p>
+              </article>
+            ))}
+          </div>
+        </section>
       </main>
     </div>
   );
 }
+

@@ -16,6 +16,7 @@ import { getUsageDashboard, setUsageLimit } from '@/lib/ai/platform/usage-tracke
 import { isValidAnalyticsEvent, logAnalyticsEvent } from '@/lib/ai/platform/analytics';
 import { builtInExtensions } from '@/lib/extensions/builtin';
 import { extensionRegistry, persistExtensionMetadata } from '@/lib/extensions/registry';
+import { requireEntitlement } from '@/lib/entitlements/hono';
 
 const permissionScopeSchema = z.object({
   readFiles: z.boolean(),
@@ -111,6 +112,11 @@ async function bootstrapBuiltInExtensions(userId: string): Promise<void> {
 }
 
 export const aiPlatformApp = new Hono();
+
+aiPlatformApp.use(
+  '/agents*',
+  requireEntitlement('canUseAgentMode', 'Agent mode is available on Pro and Team plans.')
+);
 
 aiPlatformApp.get('/tools', async (c) => {
   return c.json({ tools: listToolDescriptors() });

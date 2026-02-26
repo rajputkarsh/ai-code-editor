@@ -10,6 +10,7 @@
 
 import { getGeminiProvider } from '@/lib/ai/provider/gemini';
 import { ChatMessage } from '@/lib/ai/types';
+import { requireUserId } from '@/lib/auth/server';
 
 /**
  * Send a chat message and get a streaming response
@@ -20,6 +21,8 @@ import { ChatMessage } from '@/lib/ai/types';
  */
 export async function streamChatCompletion(messages: ChatMessage[]) {
     try {
+        await requireUserId();
+
         // Validate input
         if (!messages || messages.length === 0) {
             throw new Error('Messages array cannot be empty');
@@ -75,6 +78,8 @@ export async function streamChatCompletion(messages: ChatMessage[]) {
  */
 export async function getChatCompletion(messages: ChatMessage[]): Promise<string> {
     try {
+        await requireUserId();
+
         // Validate input
         if (!messages || messages.length === 0) {
             throw new Error('Messages array cannot be empty');
@@ -109,6 +114,8 @@ export async function getChatCompletion(messages: ChatMessage[]): Promise<string
  */
 export async function testAIConnection(): Promise<{ success: boolean; error?: string }> {
     try {
+        await requireUserId();
+
         const provider = getGeminiProvider();
         
         // Send a simple test message
