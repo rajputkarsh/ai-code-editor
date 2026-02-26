@@ -10,6 +10,7 @@ import {
 } from './subscriptions';
 import { upsertAppUser } from '@/lib/auth/user-store';
 import { env } from '@/lib/config/env';
+import { Currency } from 'lucide-react';
 
 // Billing is isolated in this module so Stripe concerns never leak into editor,
 // AI generation, or agent execution logic.
@@ -67,6 +68,7 @@ export async function createCheckoutSessionForUser(userId: string): Promise<stri
         quantity: 1,
       },
     ],
+    currency: 'inr',
     success_url: `${baseUrl}/settings?billing=success`,
     cancel_url: `${baseUrl}/settings?billing=cancelled`,
     metadata: {
