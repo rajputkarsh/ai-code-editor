@@ -23,7 +23,7 @@ export default async function Home() {
           <p>{marketingContent.hero.description}</p>
           <div className={styles.ctas}>
             <Link href={isSignedIn ? '/editor' : '/sign-in'} className={styles.primary}>
-              Sign In
+              {isSignedIn ? 'Go to Editor' : 'Sign Up for Free'}
             </Link>
             <Link href="/editor" className={styles.secondary}>
               Start Coding
