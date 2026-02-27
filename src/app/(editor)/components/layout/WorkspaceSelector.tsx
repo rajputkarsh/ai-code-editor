@@ -10,6 +10,8 @@ import {
   createTeamAPI,
   inviteTeamMemberAPI,
   listTeamMembersAPI,
+  listCollaborationNotificationsAPI,
+  markCollaborationNotificationReadAPI,
   listTeamsAPI,
   type TeamListItem,
   type TeamMember,
@@ -45,10 +47,11 @@ export function WorkspaceSelector() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [teamName, setTeamName] = useState('');
   const [selectedTeamId, setSelectedTeamId] = useState('');
-  const [inviteUserId, setInviteUserId] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<TeamRole>('EDITOR');
   const [isCollabLoading, setIsCollabLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -78,6 +81,27 @@ export function WorkspaceSelector() {
     window.addEventListener('workspace:shared-added', handleSharedWorkspaceAdded);
     return () => {
       window.removeEventListener('workspace:shared-added', handleSharedWorkspaceAdded);
+    };
+  }, [toast]);
+
+  useEffect(() => {
+    const pollNotifications = async () => {
+      const notifications = await listCollaborationNotificationsAPI({ unread: true, limit: 20 });
+      for (const notification of notifications) {
+        if (seenNotificationIdsRef.current.has(notification.id)) continue;
+        seenNotificationIdsRef.current.add(notification.id);
+        toast.success(notification.message);
+        await markCollaborationNotificationReadAPI(notification.id);
+      }
+    };
+
+    void pollNotifications();
+    const interval = window.setInterval(() => {
+      void pollNotifications();
+    }, 15000);
+
+    return () => {
+      window.clearInterval(interval);
     };
   }, [toast]);
 
@@ -400,7 +424,7 @@ export function WorkspaceSelector() {
               </button>
             </div>
             <p className="mt-2 text-[11px] text-neutral-500">
-              Invite members after assigning a team. Invite expects Clerk `userId`.
+              Invite members after assigning a team using their account email.
             </p>
           </div>
 
@@ -439,9 +463,9 @@ export function WorkspaceSelector() {
             <div className="text-xs text-neutral-400 mb-2">Invite member</div>
             <div className="flex gap-2">
               <input
-                value={inviteUserId}
-                onChange={(event) => setInviteUserId(event.target.value)}
-                placeholder="Clerk userId (user_...)"
+                value={inviteEmail}
+                onChange={(event) => setInviteEmail(event.target.value)}
+                placeholder="Email address"
                 className="flex-1 rounded-md bg-neutral-900 border border-neutral-700 px-2 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-blue-500"
               />
               <select
@@ -455,17 +479,17 @@ export function WorkspaceSelector() {
               </select>
               <button
                 className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
-                disabled={!selectedTeamId || !inviteUserId.trim() || isCollabLoading}
+                disabled={!selectedTeamId || !inviteEmail.trim() || isCollabLoading}
                 onClick={async () => {
                   if (!selectedTeamId) return;
                   setIsCollabLoading(true);
                   const ok = await inviteTeamMemberAPI(
                     selectedTeamId,
-                    inviteUserId.trim(),
+                    inviteEmail.trim(),
                     inviteRole
                   );
                   if (ok) {
-                    setInviteUserId('');
+                    setInviteEmail('');
                     await loadMembers(selectedTeamId);
                     toast.success('Member invited');
                   } else {

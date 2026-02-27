@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import { getDb, schema } from '@/lib/db';
 import type { TeamRole } from './types';
 import { canDeleteWorkspace, canManageMembers, canManageTeamPrompts, canModifyWorkspace } from './permissions';
+import { clerkClient } from '@clerk/nextjs/server';
 
 const {
   teams: teamsTable,
@@ -10,6 +11,7 @@ const {
   workspaceComments: workspaceCommentsTable,
   teamPrompts: teamPromptsTable,
   aiAuditLogs: aiAuditLogsTable,
+  collaborationNotifications: collaborationNotificationsTable,
 } = schema;
 
 type WorkspaceRole = TeamRole | 'OWNER';
@@ -119,6 +121,83 @@ export async function inviteMember(
         updatedAt: new Date(),
       },
     });
+}
+
+async function resolveUserIdByEmail(email: string): Promise<string> {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    throw new Error('Invite email is required');
+  }
+
+  const clerk = await clerkClient();
+  const usersResponse = await clerk.users.getUserList({
+    emailAddress: [normalizedEmail],
+    limit: 1,
+  });
+
+  const user = usersResponse.data?.[0];
+  const resolvedUserId = user?.id;
+  if (!resolvedUserId) {
+    throw new Error('No user found with this email');
+  }
+
+  return resolvedUserId;
+}
+
+async function createTeamInviteNotification(input: {
+  invitedUserId: string;
+  invitedEmail: string;
+  inviterUserId: string;
+  teamId: string;
+  role: TeamRole;
+}): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+
+  const teamRows = await db
+    .select({ name: teamsTable.name })
+    .from(teamsTable)
+    .where(eq(teamsTable.id, input.teamId))
+    .limit(1);
+
+  const teamName = teamRows[0]?.name ?? 'Team';
+  const roleLabel = input.role.toLowerCase();
+
+  await db.insert(collaborationNotificationsTable).values({
+    userId: input.invitedUserId,
+    type: 'TEAM_INVITE',
+    title: 'Team invite accepted',
+    message: `You were added to ${teamName} as ${roleLabel}.`,
+    metadata: {
+      teamId: input.teamId,
+      teamName,
+      role: input.role,
+      invitedEmail: input.invitedEmail,
+      inviterUserId: input.inviterUserId,
+    },
+    isRead: false,
+    createdAt: new Date(),
+    readAt: null,
+  });
+}
+
+export async function inviteMemberByEmail(
+  userId: string,
+  teamId: string,
+  invitedEmail: string,
+  role: TeamRole
+): Promise<void> {
+  await ensureTeamRole(userId, teamId, 'ADMIN');
+
+  const invitedUserId = await resolveUserIdByEmail(invitedEmail);
+  await inviteMember(userId, teamId, invitedUserId, role);
+  await createTeamInviteNotification({
+    invitedUserId,
+    invitedEmail: invitedEmail.trim().toLowerCase(),
+    inviterUserId: userId,
+    teamId,
+    role,
+  });
 }
 
 export async function updateMemberRole(
@@ -470,6 +549,60 @@ export async function listAccessibleWorkspaces(userId: string) {
   return baseQuery
     .where(or(eq(workspacesTable.userId, userId), inArray(workspacesTable.teamId, teamIds)))
     .orderBy(desc(workspacesTable.lastOpenedAt));
+}
+
+export async function listNotificationsForUser(
+  userId: string,
+  options?: { unreadOnly?: boolean; limit?: number }
+) {
+  const db = getDb();
+  if (!db) return [];
+
+  const unreadOnly = options?.unreadOnly ?? false;
+  const limit = Math.max(1, Math.min(options?.limit ?? 50, 100));
+
+  const base = db
+    .select({
+      id: collaborationNotificationsTable.id,
+      type: collaborationNotificationsTable.type,
+      title: collaborationNotificationsTable.title,
+      message: collaborationNotificationsTable.message,
+      metadata: collaborationNotificationsTable.metadata,
+      isRead: collaborationNotificationsTable.isRead,
+      createdAt: collaborationNotificationsTable.createdAt,
+      readAt: collaborationNotificationsTable.readAt,
+    })
+    .from(collaborationNotificationsTable)
+    .where(
+      unreadOnly
+        ? and(
+            eq(collaborationNotificationsTable.userId, userId),
+            eq(collaborationNotificationsTable.isRead, false)
+          )
+        : eq(collaborationNotificationsTable.userId, userId)
+    )
+    .orderBy(desc(collaborationNotificationsTable.createdAt))
+    .limit(limit);
+
+  return base;
+}
+
+export async function markNotificationAsRead(userId: string, notificationId: string): Promise<void> {
+  const db = getDb();
+  if (!db) return;
+
+  await db
+    .update(collaborationNotificationsTable)
+    .set({
+      isRead: true,
+      readAt: new Date(),
+    })
+    .where(
+      and(
+        eq(collaborationNotificationsTable.id, notificationId),
+        eq(collaborationNotificationsTable.userId, userId)
+      )
+    );
 }
 
 export async function assignWorkspaceToTeam(

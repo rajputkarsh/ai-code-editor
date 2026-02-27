@@ -14,6 +14,17 @@ export interface TeamMember {
   createdAt: string;
 }
 
+export interface CollaborationNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  metadata?: Record<string, unknown> | null;
+  isRead: boolean;
+  createdAt: string;
+  readAt?: string | null;
+}
+
 const BASE = '/api/collaboration';
 
 export async function listTeamsAPI(): Promise<TeamListItem[]> {
@@ -43,13 +54,31 @@ export async function listTeamMembersAPI(teamId: string): Promise<TeamMember[]> 
 
 export async function inviteTeamMemberAPI(
   teamId: string,
-  userId: string,
+  email: string,
   role: TeamRole
 ): Promise<boolean> {
   const response = await fetch(`${BASE}/teams/${teamId}/members`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, role }),
+    body: JSON.stringify({ email, role }),
+  });
+  return response.ok;
+}
+
+export async function listCollaborationNotificationsAPI(
+  options?: { unread?: boolean; limit?: number }
+): Promise<CollaborationNotification[]> {
+  const unread = options?.unread ? 'true' : 'false';
+  const limit = options?.limit ?? 50;
+  const response = await fetch(`${BASE}/notifications?unread=${unread}&limit=${limit}`);
+  if (!response.ok) return [];
+  const data = await response.json();
+  return data.notifications ?? [];
+}
+
+export async function markCollaborationNotificationReadAPI(notificationId: string): Promise<boolean> {
+  const response = await fetch(`${BASE}/notifications/${notificationId}/read`, {
+    method: 'PATCH',
   });
   return response.ok;
 }

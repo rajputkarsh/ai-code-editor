@@ -10,13 +10,15 @@ import {
   createTeam,
   createTeamPrompt,
   deleteTeamPrompt,
-  inviteMember,
+  inviteMemberByEmail,
   assignWorkspaceToTeam,
   listAIAuditLogs,
   listMembers,
+  listNotificationsForUser,
   listTeamPrompts,
   listTeamsForUser,
   listWorkspaceComments,
+  markNotificationAsRead,
   removeMember,
   resolveWorkspaceAccess,
   updateMemberRole,
@@ -32,7 +34,7 @@ const createTeamSchema = z.object({
 });
 
 const inviteMemberSchema = z.object({
-  userId: z.string().min(1),
+  email: z.string().email(),
   role: teamRoleSchema,
 });
 
@@ -70,6 +72,11 @@ const presenceSchema = z.object({
 const patchSchema = z.object({
   baseVersion: z.number().int().min(0),
   content: z.string(),
+});
+
+const notificationQuerySchema = z.object({
+  unread: z.enum(['true', 'false']).optional(),
+  limit: z.string().optional(),
 });
 
 function getUserId(c: Context): string {
@@ -116,13 +123,37 @@ collaborationApp.post(
   '/teams/:teamId/members',
   zValidator('json', inviteMemberSchema),
   async (c) => {
-    const userId = getUserId(c);
-    const teamId = c.req.param('teamId');
-    const data = c.req.valid('json');
-    await inviteMember(userId, teamId, data.userId, data.role);
-    return c.json({ success: true });
+    try {
+      const userId = getUserId(c);
+      const teamId = c.req.param('teamId');
+      const data = c.req.valid('json');
+      await inviteMemberByEmail(userId, teamId, data.email, data.role);
+      return c.json({ success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to invite member';
+      return c.json({ error: message }, 400);
+    }
   }
 );
+
+collaborationApp.get('/notifications', zValidator('query', notificationQuerySchema), async (c) => {
+  const userId = getUserId(c);
+  const query = c.req.valid('query');
+  const unreadOnly = query.unread === 'true';
+  const limit = query.limit ? Number.parseInt(query.limit, 10) : 50;
+  const notifications = await listNotificationsForUser(userId, {
+    unreadOnly,
+    limit: Number.isFinite(limit) ? limit : 50,
+  });
+  return c.json({ notifications });
+});
+
+collaborationApp.patch('/notifications/:notificationId/read', async (c) => {
+  const userId = getUserId(c);
+  const notificationId = c.req.param('notificationId');
+  await markNotificationAsRead(userId, notificationId);
+  return c.json({ success: true });
+});
 
 collaborationApp.patch(
   '/teams/:teamId/members/:memberUserId',
