@@ -30,10 +30,10 @@ export type AppUser = typeof appUsers.$inferSelect;
 export type NewAppUser = typeof appUsers.$inferInsert;
 
 /**
- * User subscriptions persisted from Stripe webhooks.
+ * User subscriptions persisted from billing provider webhooks (Lemon Squeezy).
  *
  * Billing is intentionally isolated from editor and AI internals. Core editor
- * logic never imports Stripe primitives and consumes only entitlements.
+ * logic never imports provider primitives and consumes only entitlements.
  */
 export const userSubscriptions = pgTable('user_subscriptions', {
   id: uuid('id').primaryKey().defaultRandom(),

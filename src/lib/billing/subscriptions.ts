@@ -1,20 +1,9 @@
 import { eq } from 'drizzle-orm';
-import Stripe from 'stripe';
 import { getDb, schema } from '@/lib/db';
-import { getPlanFromStripePriceId } from './plans';
-
-function resolveCurrentPeriodEnd(subscription: Stripe.Subscription): Date | null {
-  const endSeconds = subscription.items.data[0]?.current_period_end ?? null;
-  if (!endSeconds) return null;
-  return new Date(endSeconds * 1000);
-}
-
-function resolvePriceId(subscription: Stripe.Subscription): string | null {
-  return subscription.items.data[0]?.price?.id ?? null;
-}
+import { getPlanFromLemonVariantId } from './plans';
 
 async function findUserIdForCustomer(
-  stripeCustomerId: string,
+  customerId: string,
   customerMetadataUserId: string | null
 ): Promise<string | null> {
   if (customerMetadataUserId) return customerMetadataUserId;
@@ -24,7 +13,7 @@ async function findUserIdForCustomer(
   const rows = await db
     .select({ userId: schema.userSubscriptions.userId })
     .from(schema.userSubscriptions)
-    .where(eq(schema.userSubscriptions.stripeCustomerId, stripeCustomerId))
+    .where(eq(schema.userSubscriptions.stripeCustomerId, customerId))
     .limit(1);
 
   return rows[0]?.userId ?? null;
@@ -68,7 +57,7 @@ export async function upsertSubscriptionRecord(input: {
     });
 }
 
-export async function clearSubscriptionByStripeSubscriptionId(stripeSubscriptionId: string): Promise<void> {
+export async function clearSubscriptionByExternalSubscriptionId(subscriptionId: string): Promise<void> {
   const db = getDb();
   if (!db) return;
 
@@ -81,7 +70,7 @@ export async function clearSubscriptionByStripeSubscriptionId(stripeSubscription
       currentPeriodEnd: null,
       updatedAt: new Date(),
     })
-    .where(eq(schema.userSubscriptions.stripeSubscriptionId, stripeSubscriptionId));
+    .where(eq(schema.userSubscriptions.stripeSubscriptionId, subscriptionId));
 }
 
 export async function getSubscriptionByUserId(userId: string) {
@@ -97,34 +86,32 @@ export async function getSubscriptionByUserId(userId: string) {
   return rows[0] ?? null;
 }
 
-export async function syncSubscriptionFromStripeEvent(
-  subscription: Stripe.Subscription
-): Promise<void> {
-  const customerId =
-    typeof subscription.customer === 'string'
-      ? subscription.customer
-      : subscription.customer.id;
-
-  const metadataUserId = subscription.metadata?.userId ?? null;
-  const userId = await findUserIdForCustomer(customerId, metadataUserId);
+export async function syncSubscriptionFromLemonEvent(input: {
+  customerId: string;
+  subscriptionId: string;
+  variantId: string | null;
+  status: string;
+  currentPeriodEnd: Date | null;
+  metadataUserId?: string | null;
+}): Promise<void> {
+  const userId = await findUserIdForCustomer(input.customerId, input.metadataUserId ?? null);
   if (!userId) return;
 
-  const priceId = resolvePriceId(subscription);
-  const plan = getPlanFromStripePriceId(priceId);
+  const plan = getPlanFromLemonVariantId(input.variantId);
 
   await upsertSubscriptionRecord({
     userId,
     plan,
-    status: subscription.status,
-    stripeCustomerId: customerId,
-    stripeSubscriptionId: subscription.id,
-    currentPeriodEnd: resolveCurrentPeriodEnd(subscription),
+    status: input.status,
+    stripeCustomerId: input.customerId,
+    stripeSubscriptionId: input.subscriptionId,
+    currentPeriodEnd: input.currentPeriodEnd,
   });
 }
 
-export async function linkStripeCustomerToUser(input: {
+export async function linkCustomerToUser(input: {
   userId: string;
-  stripeCustomerId: string;
+  customerId: string;
 }): Promise<void> {
   const db = getDb();
   if (!db) return;
@@ -136,7 +123,7 @@ export async function linkStripeCustomerToUser(input: {
       userId: input.userId,
       plan: 'free',
       status: 'inactive',
-      stripeCustomerId: input.stripeCustomerId,
+      stripeCustomerId: input.customerId,
       stripeSubscriptionId: null,
       currentPeriodEnd: null,
       createdAt: now,
@@ -145,7 +132,7 @@ export async function linkStripeCustomerToUser(input: {
     .onConflictDoUpdate({
       target: schema.userSubscriptions.userId,
       set: {
-        stripeCustomerId: input.stripeCustomerId,
+        stripeCustomerId: input.customerId,
         updatedAt: now,
       },
     });

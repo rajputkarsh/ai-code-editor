@@ -3,24 +3,23 @@ import type { SubscriptionPlan } from '@/lib/entitlements/types';
 
 export interface BillingPlan {
   plan: SubscriptionPlan;
-  stripePriceId: string;
+  lemonSqueezyVariantId: string;
 }
 
-export function getProPlanPriceId(): string {
-  if (!env.STRIPE_PRO_MONTHLY_PRICE_ID) {
-    throw new Error('STRIPE_PRO_MONTHLY_PRICE_ID is missing.');
+export function getProPlanVariantId(): string {
+  if (!env.LEMON_SQUEEZY_PRO_VARIANT_ID) {
+    throw new Error('LEMON_SQUEEZY_PRO_VARIANT_ID is missing.');
   }
-  return env.STRIPE_PRO_MONTHLY_PRICE_ID;
+  return env.LEMON_SQUEEZY_PRO_VARIANT_ID;
 }
 
-export function getPlanFromStripePriceId(priceId: string | null | undefined): SubscriptionPlan {
-  if (!priceId) return 'free';
-  if (env.STRIPE_PRO_MONTHLY_PRICE_ID && priceId === env.STRIPE_PRO_MONTHLY_PRICE_ID) {
+export function getPlanFromLemonVariantId(variantId: string | null | undefined): SubscriptionPlan {
+  if (!variantId) return 'free';
+  if (env.LEMON_SQUEEZY_PRO_VARIANT_ID && variantId === env.LEMON_SQUEEZY_PRO_VARIANT_ID) {
     return 'pro';
   }
-  if (env.STRIPE_TEAM_MONTHLY_PRICE_ID && priceId === env.STRIPE_TEAM_MONTHLY_PRICE_ID) {
+  if (env.LEMON_SQUEEZY_TEAM_VARIANT_ID && variantId === env.LEMON_SQUEEZY_TEAM_VARIANT_ID) {
     return 'team';
   }
   return 'free';
 }
-
