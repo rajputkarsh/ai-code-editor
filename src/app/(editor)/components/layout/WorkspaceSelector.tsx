@@ -10,8 +10,6 @@ import {
   createTeamAPI,
   inviteTeamMemberAPI,
   listTeamMembersAPI,
-  listCollaborationNotificationsAPI,
-  markCollaborationNotificationReadAPI,
   listTeamsAPI,
   type TeamListItem,
   type TeamMember,
@@ -51,7 +49,6 @@ export function WorkspaceSelector() {
   const [inviteRole, setInviteRole] = useState<TeamRole>('EDITOR');
   const [isCollabLoading, setIsCollabLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -81,27 +78,6 @@ export function WorkspaceSelector() {
     window.addEventListener('workspace:shared-added', handleSharedWorkspaceAdded);
     return () => {
       window.removeEventListener('workspace:shared-added', handleSharedWorkspaceAdded);
-    };
-  }, [toast]);
-
-  useEffect(() => {
-    const pollNotifications = async () => {
-      const notifications = await listCollaborationNotificationsAPI({ unread: true, limit: 20 });
-      for (const notification of notifications) {
-        if (seenNotificationIdsRef.current.has(notification.id)) continue;
-        seenNotificationIdsRef.current.add(notification.id);
-        toast.success(notification.message);
-        await markCollaborationNotificationReadAPI(notification.id);
-      }
-    };
-
-    void pollNotifications();
-    const interval = window.setInterval(() => {
-      void pollNotifications();
-    }, 15000);
-
-    return () => {
-      window.clearInterval(interval);
     };
   }, [toast]);
 

@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { PanelLeft, MessageSquare, Wand2, Clock, FileText, Github, Terminal, Monitor, BarChart3, Settings } from 'lucide-react';
 import { ClientAITaskType, ClientModelId, CLIENT_AI_TASK_TYPES, CLIENT_MODEL_IDS } from '@/lib/ai/platform/client-preferences';
 import { WorkspaceSelector } from './WorkspaceSelector';
+import { NotificationsDropdown } from './NotificationsDropdown';
 
 interface EditorToolbarProps {
     isFileExplorerOpen: boolean;
@@ -149,6 +150,7 @@ export function EditorToolbar({
 
             {/* Right section - Panel toggles */}
             <div className="flex items-center gap-1">
+                <NotificationsDropdown />
                 <Link
                     href="/settings"
                     className="p-1 rounded-md transition-colors text-neutral-400 hover:text-white hover:bg-neutral-800"
