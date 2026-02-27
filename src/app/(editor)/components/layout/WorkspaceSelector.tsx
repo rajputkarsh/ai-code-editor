@@ -63,6 +63,24 @@ export function WorkspaceSelector() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleSharedWorkspaceAdded = (event: Event) => {
+      const customEvent = event as CustomEvent<{ workspaces?: Array<{ name?: string }> }>;
+      const count = customEvent.detail?.workspaces?.length ?? 0;
+      if (count <= 0) return;
+      if (count === 1) {
+        toast.success('A shared workspace is now available');
+        return;
+      }
+      toast.success(`${count} shared workspaces are now available`);
+    };
+
+    window.addEventListener('workspace:shared-added', handleSharedWorkspaceAdded);
+    return () => {
+      window.removeEventListener('workspace:shared-added', handleSharedWorkspaceAdded);
+    };
+  }, [toast]);
+
   const handleCreate = () => {
     setWorkspaceName('My React App');
     setTemplateType('react-vite');

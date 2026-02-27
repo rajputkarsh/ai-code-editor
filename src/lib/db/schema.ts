@@ -8,7 +8,7 @@
  * - Metadata (name, source, timestamps)
  */
 
-import { pgTable, text, timestamp, uuid, jsonb, uniqueIndex, integer, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, uuid, jsonb, uniqueIndex, index, integer, boolean } from 'drizzle-orm/pg-core';
 
 /**
  * App Users Table
@@ -132,6 +132,37 @@ export const teamMemberships = pgTable(
 
 export type TeamMembership = typeof teamMemberships.$inferSelect;
 export type NewTeamMembership = typeof teamMemberships.$inferInsert;
+
+/**
+ * Collaboration notifications (server-side inbox).
+ *
+ * Used for invite notifications and other collaboration events that should
+ * survive reloads and be queryable across sessions/devices.
+ */
+export const collaborationNotifications = pgTable(
+  'collaboration_notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id').notNull(),
+    type: text('type').notNull(), // TEAM_INVITE | ...
+    title: text('title').notNull(),
+    message: text('message').notNull(),
+    metadata: jsonb('metadata'),
+    isRead: boolean('is_read').notNull().default(false),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    readAt: timestamp('read_at'),
+  },
+  (table) => ({
+    notificationUserCreatedIdx: index('collab_notifications_user_created_idx').on(
+      table.userId,
+      table.createdAt,
+      table.id
+    ),
+  })
+);
+
+export type CollaborationNotification = typeof collaborationNotifications.$inferSelect;
+export type NewCollaborationNotification = typeof collaborationNotifications.$inferInsert;
 
 /**
  * Workspace comments (file-level only, non-threaded).

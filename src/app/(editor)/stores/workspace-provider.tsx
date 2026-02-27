@@ -96,6 +96,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   
   // Track which files have unsaved changes
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
+  const hasLoadedInitialWorkspaceListRef = useRef(false);
 
   const initAutosaveManager = useCallback((targetWorkspace: Workspace, targetVfs: VirtualFileSystem) => {
     if (autosaveManagerRef.current) {
@@ -136,14 +137,44 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const refreshWorkspaces = useCallback(async () => {
     const result = await listWorkspacesAPI();
     const { workspaces: workspaceList, activeWorkspaceId: activeId } = result;
-    setWorkspaces(workspaceList);
+    setWorkspaces((prev) => {
+      const prevIds = new Set(prev.map((ws) => ws.id));
+      const newlyVisibleShared = workspaceList.filter(
+        (ws) => Boolean(ws.teamId) && !prevIds.has(ws.id)
+      );
+
+      if (
+        hasLoadedInitialWorkspaceListRef.current &&
+        newlyVisibleShared.length > 0 &&
+        typeof window !== 'undefined'
+      ) {
+        window.dispatchEvent(
+          new CustomEvent('workspace:shared-added', {
+            detail: { workspaces: newlyVisibleShared },
+          })
+        );
+      }
+
+      return workspaceList;
+    });
     setActiveWorkspaceId(activeId);
+    hasLoadedInitialWorkspaceListRef.current = true;
 
     workspaceList.forEach((ws) => {
       persistedWorkspaceIdsRef.current.add(ws.id);
     });
     return result;
   }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void refreshWorkspaces();
+    }, 15000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [refreshWorkspaces]);
 
   /**
    * Initialize autosave manager
