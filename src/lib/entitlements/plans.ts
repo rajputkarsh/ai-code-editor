@@ -5,7 +5,7 @@ const PLAN_MATRIX: Record<SubscriptionPlan, Omit<Entitlements, 'plan'>> = {
     canUseAgentMode: false,
     maxAiTokensPerMonth: 100_000,
     canAccessPrivateRepos: false,
-    maxWorkspaces: 1,
+    maxWorkspaces: 3,
     canUseTeamFeatures: false,
   },
   pro: {
@@ -30,4 +30,3 @@ export function buildEntitlements(plan: SubscriptionPlan): Entitlements {
     ...PLAN_MATRIX[plan],
   };
 }
-
