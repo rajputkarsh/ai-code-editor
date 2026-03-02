@@ -19,6 +19,11 @@ export function requireEntitlement(
     }
 
     const entitlements = await loadEntitlementsForRequest(userId);
+
+
+    console.log('entitlements', entitlements);
+    console.log('key', key);
+    console.log('userId', userId);
     const allowed = entitlements[key];
     const isAllowed = typeof allowed === 'boolean' ? allowed : Boolean(allowed);
 
