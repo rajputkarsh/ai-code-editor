@@ -160,6 +160,21 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     setActiveWorkspaceId(activeId);
     hasLoadedInitialWorkspaceListRef.current = true;
 
+    // Sync teamId on the active workspace object if it changed server-side
+    // (e.g. after assignWorkspaceToTeam is called).
+    const currentId = workspaceRef.current?.metadata.id;
+    if (currentId) {
+      const updatedSummary = workspaceList.find((ws) => ws.id === currentId);
+      if (updatedSummary) {
+        const incomingTeamId = updatedSummary.teamId ?? undefined;
+        if (workspaceRef.current?.metadata.teamId !== incomingTeamId) {
+          setWorkspace((prev) =>
+            prev ? { ...prev, metadata: { ...prev.metadata, teamId: incomingTeamId } } : prev
+          );
+        }
+      }
+    }
+
     workspaceList.forEach((ws) => {
       persistedWorkspaceIdsRef.current.add(ws.id);
     });

@@ -400,7 +400,7 @@ export function WorkspaceSelector() {
               </button>
             </div>
             <p className="mt-2 text-[11px] text-neutral-500">
-              Invite members after assigning a team using their account email.
+              Assign this workspace to a team so members can collaborate on it.
             </p>
           </div>
 
@@ -457,8 +457,21 @@ export function WorkspaceSelector() {
                 className="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
                 disabled={!selectedTeamId || !inviteEmail.trim() || isCollabLoading}
                 onClick={async () => {
-                  if (!selectedTeamId) return;
+                  if (!selectedTeamId || !workspace) return;
                   setIsCollabLoading(true);
+
+                  // Automatically assign the workspace to the selected team if not already set.
+                  // This ensures the invited user can actually see the project.
+                  if (workspace.metadata.teamId !== selectedTeamId) {
+                    const assigned = await assignWorkspaceTeamAPI(workspace.metadata.id, selectedTeamId);
+                    if (!assigned) {
+                      toast.error('Failed to assign workspace to team');
+                      setIsCollabLoading(false);
+                      return;
+                    }
+                    await refreshWorkspaces();
+                  }
+
                   const ok = await inviteTeamMemberAPI(
                     selectedTeamId,
                     inviteEmail.trim(),
