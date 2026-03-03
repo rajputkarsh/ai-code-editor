@@ -292,6 +292,61 @@ collaborationApp.get('/presence/:workspaceId', async (c) => {
   return c.json({ users });
 });
 
+/**
+ * GET /sync/workspace/:workspaceId/stream
+ * Server-Sent Events stream for real-time workspace updates.
+ * Clients subscribe when they open a shared (team) workspace.
+ * The server broadcasts a `workspace_updated` event whenever another user saves.
+ */
+collaborationApp.get('/sync/workspace/:workspaceId/stream', async (c) => {
+  const userId = getUserId(c);
+  const workspaceId = c.req.param('workspaceId');
+
+  const access = await resolveWorkspaceAccess(userId, workspaceId);
+  assertCanReadWorkspace(access);
+
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      // Send initial comment to confirm connection
+      controller.enqueue(encoder.encode(': connected\n\n'));
+
+      const unsubscribe = collaborationRealtimeStore.subscribe(workspaceId, controller);
+
+      // Keep-alive ping every 25 seconds to prevent proxy timeouts
+      const pingInterval = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(': ping\n\n'));
+        } catch {
+          clearInterval(pingInterval);
+          unsubscribe();
+        }
+      }, 25000);
+
+      // Clean up when the client disconnects
+      c.req.raw.signal.addEventListener('abort', () => {
+        clearInterval(pingInterval);
+        unsubscribe();
+        try {
+          controller.close();
+        } catch {
+          // already closed
+        }
+      });
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+  });
+});
+
 collaborationApp.post(
   '/sync/files/:workspaceId/:fileId/patch',
   zValidator('json', patchSchema),

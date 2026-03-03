@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useAuth } from '@clerk/nextjs';
 import { Workspace, VirtualFileSystem, importZipFile, createEmptyWorkspace } from '@/lib/workspace';
 import {
   createWorkspaceAPI,
@@ -73,6 +74,7 @@ interface WorkspaceContextType {
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
+  const { userId: clerkUserId } = useAuth();
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [vfs, setVfs] = useState<VirtualFileSystem | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
@@ -80,13 +82,20 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Phase 1.6: Enhanced autosave using AutosaveManager
   const autosaveManagerRef = useRef<AutosaveManager | null>(null);
   const isRestoringRef = useRef(false);
   const workspaceRef = useRef<Workspace | null>(null);
   const vfsRef = useRef<VirtualFileSystem | null>(null);
   const persistedWorkspaceIdsRef = useRef<Set<string>>(new Set());
+
+  // Real-time collaboration: track latest autosave state in a ref so the SSE
+  // event handler (a closure) can read it without a stale-closure problem.
+  const autosaveStateRef = useRef<AutosaveState>('idle');
+  // Set to true by the SSE handler when a remote update arrives while the user
+  // has unsaved local changes. Processed once autosave completes.
+  const pendingRemoteReloadRef = useRef(false);
   
   // Phase 1.5: Editor state capture function (set by editor-persistence hook)
   const [editorStateCaptureFn, setEditorStateCaptureFn] = useState<(() => EditorState | undefined) | null>(null);
@@ -125,11 +134,24 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
     // Register state change callback for UI indicators
     autosaveManagerRef.current.onStateChange((state) => {
+      autosaveStateRef.current = state;
       setAutosaveState(state);
-      
-      // Clear dirty files when save completes
+
+      // Clear dirty files when save completes, then apply any queued remote update
       if (state === 'synced') {
         setDirtyFiles(new Set());
+        if (pendingRemoteReloadRef.current) {
+          pendingRemoteReloadRef.current = false;
+          const ws = workspaceRef.current;
+          if (ws) {
+            void loadWorkspaceAPI(ws.metadata.id).then((updated) => {
+              if (!updated) return;
+              const newVfs = new VirtualFileSystem(updated.vfs);
+              vfsRef.current = newVfs;
+              setVfs(newVfs);
+            });
+          }
+        }
       }
     });
   }, []);
@@ -190,6 +212,54 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       window.clearInterval(interval);
     };
   }, [refreshWorkspaces]);
+
+  /**
+   * Real-time collaboration via SSE.
+   *
+   * Opens an EventSource whenever the active workspace belongs to a team.
+   * When another user saves, the server broadcasts `workspace_updated` and
+   * we reload the VFS — immediately if the user has no local changes, or
+   * after their current autosave finishes.
+   */
+  useEffect(() => {
+    const workspaceId = workspace?.metadata.id;
+    const teamId = workspace?.metadata.teamId;
+    if (!workspaceId || !teamId || typeof window === 'undefined') return;
+
+    const es = new EventSource(`/api/collaboration/sync/workspace/${workspaceId}/stream`);
+
+    es.onmessage = (event: MessageEvent<string>) => {
+      let data: { type: string; updatedBy?: string };
+      try {
+        data = JSON.parse(event.data) as { type: string; updatedBy?: string };
+      } catch {
+        return;
+      }
+
+      if (data.type !== 'workspace_updated') return;
+      // Ignore events triggered by this user's own save
+      if (data.updatedBy && data.updatedBy === clerkUserId) return;
+
+      const safeToReload =
+        autosaveStateRef.current === 'idle' || autosaveStateRef.current === 'synced';
+
+      if (safeToReload) {
+        void loadWorkspaceAPI(workspaceId).then((updated) => {
+          if (!updated) return;
+          const newVfs = new VirtualFileSystem(updated.vfs);
+          vfsRef.current = newVfs;
+          setVfs(newVfs);
+        });
+      } else {
+        // A save is in flight — apply the remote update once it completes
+        pendingRemoteReloadRef.current = true;
+      }
+    };
+
+    return () => {
+      es.close();
+    };
+  }, [workspace?.metadata.id, workspace?.metadata.teamId, clerkUserId]);
 
   /**
    * Initialize autosave manager

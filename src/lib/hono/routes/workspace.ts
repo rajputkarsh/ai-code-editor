@@ -30,6 +30,8 @@ import {
   setActiveWorkspace,
   renameWorkspace,
 } from '@/lib/workspace/persistence';
+import { collaborationRealtimeStore } from '@/lib/collaboration/realtime';
+import { resolveWorkspaceAccess } from '@/lib/collaboration/operations';
 import {
   StorageLimitExceededError,
   WorkspaceCountLimitExceededError,
@@ -269,6 +271,21 @@ workspaceApp.put(
         data.vfs as VFSStructure,
         data.editorState as EditorState | undefined
       );
+
+      // Broadcast to any SSE subscribers watching this workspace (non-blocking).
+      // Only fires if other users are connected — no-op otherwise.
+      try {
+        const access = await resolveWorkspaceAccess(userId, workspaceId);
+        if (access?.teamId) {
+          collaborationRealtimeStore.broadcast(workspaceId, {
+            type: 'workspace_updated',
+            updatedBy: userId,
+            timestamp: Date.now(),
+          });
+        }
+      } catch {
+        // Never let broadcast failures break the save response
+      }
 
       return c.json({ success: true });
     } catch (error) {
