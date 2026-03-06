@@ -70,6 +70,7 @@ export interface EditorState {
   activeTabId: string | null;
   activeSecondaryTabId: string | null;
   isSplit: boolean;
+  isPreviewOpen?: boolean;
   cursorPosition?: {
     fileId: string;
     line: number;

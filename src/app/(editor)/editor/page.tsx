@@ -140,9 +140,6 @@ const EditorArea = () => {
 };
 
 export default function EditorPage() {
-    // Phase 1.5: Initialize editor state persistence (restores tabs, layout, etc.)
-    useEditorStatePersistence();
-
     // Listen for WebContainer connection messages and forward them
     React.useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
@@ -187,7 +184,24 @@ export default function EditorPage() {
     
     // Preview manager
     const previewManagerRef = React.useRef<PreviewManager | null>(null);
-    
+
+    // Phase 1.5: Initialize editor state persistence (restores tabs, layout, preview)
+    const handleRestorePreview = React.useCallback((isOpen: boolean) => {
+        if (isOpen) {
+            setIsPreviewOpen(true);
+            // Enable preview manager after it's initialized (deferred)
+            setTimeout(() => {
+                if (previewManagerRef.current) {
+                    previewManagerRef.current.enable();
+                }
+            }, 100);
+        }
+    }, []);
+    useEditorStatePersistence({
+        isPreviewOpen,
+        onRestorePreview: handleRestorePreview,
+    });
+
     // Phase 2: AI code actions and explanations
     const [isCodeActionMenuOpen, setIsCodeActionMenuOpen] = useState(false);
     const [codeActionMenuPosition, setCodeActionMenuPosition] = useState({ x: 0, y: 0 });
