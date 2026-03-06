@@ -226,14 +226,17 @@ export class PreviewManager {
   }
   
   /**
-   * Update VFS and trigger preview update if enabled
+   * Update VFS and trigger preview update if enabled.
+   * @param skipSchedule - If true, update the stored VFS without scheduling
+   *   a preview regeneration. Useful when the caller will reload the iframe
+   *   separately (e.g. via refreshNonce for dev-server projects).
    */
-  updateVFS(vfs: VFSStructure): void {
+  updateVFS(vfs: VFSStructure, skipSchedule?: boolean): void {
     this.vfs = vfs;
-    
-    if (this.state.isEnabled) {
+
+    if (this.state.isEnabled && !skipSchedule) {
       this.scheduleUpdate();
-    } else {
+    } else if (!this.state.isEnabled) {
       // Update project type detection even when disabled
       const projectType = detectProjectType(vfs);
       this.updateState({ projectType });

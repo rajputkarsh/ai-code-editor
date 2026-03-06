@@ -387,14 +387,17 @@ export default function EditorPage() {
     const handlePreviewRefresh = React.useCallback(() => {
         if (!isPreviewOpen || !previewState.previewUrl) return;
         console.info('[Preview] Manual refresh triggered');
+
         if (previewState.projectType === 'vite' && previewManagerRef.current && vfs) {
-            previewManagerRef.current.updateVFS(vfs.getStructure());
+            // Dev-server projects: sync files to WebContainer, then reload iframe
+            // via nonce. Skip scheduleUpdate to avoid a redundant URL regeneration.
+            previewManagerRef.current.updateVFS(vfs.getStructure(), true);
             setPreviewReloadNonce((prev) => prev + 1);
             return;
         }
-        setPreviewReloadNonce((prev) => prev + 1);
 
-        // For blob/static previews, regenerate preview content as part of refresh.
+        // Static/React: regenerate the blob URL from current VFS.
+        // The new URL automatically causes the iframe to reload — no nonce needed.
         if (
             previewManagerRef.current &&
             vfs &&
@@ -421,7 +424,9 @@ export default function EditorPage() {
             );
 
             if (isDevServerProject && hasDevServerUrl) {
-                previewManagerRef.current?.updateVFS(vfs.getStructure());
+                // Sync files to WebContainer (skip preview regeneration) and
+                // reload the iframe via nonce — single reload path.
+                previewManagerRef.current?.updateVFS(vfs.getStructure(), true);
                 setPreviewReloadNonce((prev) => prev + 1);
                 return;
             }
@@ -430,7 +435,9 @@ export default function EditorPage() {
                 previewManagerRef.current &&
                 (previewState.projectType === 'static' || previewState.projectType === 'react')
             ) {
-                console.info('[Preview] Dirty file change detected → reloading iframe');
+                // Regenerate blob URL from updated VFS — the URL change
+                // automatically reloads the iframe, no nonce needed.
+                console.info('[Preview] Dirty file change detected → regenerating preview');
                 previewManagerRef.current.updateVFS(vfs.getStructure());
             }
         }, 400);
