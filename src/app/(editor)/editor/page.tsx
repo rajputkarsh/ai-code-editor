@@ -388,67 +388,53 @@ export default function EditorPage() {
         if (!isPreviewOpen || !previewState.previewUrl) return;
         console.info('[Preview] Manual refresh triggered');
 
-        if (previewState.projectType === 'vite' && previewManagerRef.current && vfs) {
-            // Dev-server projects: sync files to WebContainer, then reload iframe
-            // via nonce. Skip scheduleUpdate to avoid a redundant URL regeneration.
-            previewManagerRef.current.updateVFS(vfs.getStructure(), true);
-            setPreviewReloadNonce((prev) => prev + 1);
-            return;
-        }
-
-        // Static/React: regenerate the blob URL from current VFS.
-        // The new URL automatically causes the iframe to reload — no nonce needed.
-        if (
-            previewManagerRef.current &&
-            vfs &&
-            (previewState.projectType === 'static' || previewState.projectType === 'react')
-        ) {
+        if (previewManagerRef.current && vfs) {
+            // For all project types: let PreviewManager regenerate/sync.
+            // - Static/React: generates a new blob URL (iframe reloads automatically).
+            // - Vite: syncs files to WebContainer so the dev server picks them up.
             previewManagerRef.current.updateVFS(vfs.getStructure());
         }
-    }, [isPreviewOpen, previewState.previewUrl, previewState.projectType, vfs]);
+    }, [isPreviewOpen, previewState.previewUrl, vfs]);
 
-    // Debounced auto-reload on dirty file changes (same signal path as autosave/DB saves).
+    // Cleanup preview reload timer on unmount only.
     React.useEffect(() => {
-        if (!isPreviewOpen || !vfs) return;
-        if (!['static', 'react', 'vite'].includes(previewState.projectType)) return;
-        if (dirtyFiles.size === 0) return;
-
-        if (fileChangeReloadTimerRef.current) {
-            clearTimeout(fileChangeReloadTimerRef.current);
-        }
-
-        fileChangeReloadTimerRef.current = setTimeout(() => {
-            const isDevServerProject = previewState.projectType === 'vite';
-            const hasDevServerUrl = Boolean(
-                previewState.previewUrl && /^https?:\/\//.test(previewState.previewUrl)
-            );
-
-            if (isDevServerProject && hasDevServerUrl) {
-                // Sync files to WebContainer (skip preview regeneration) and
-                // reload the iframe via nonce — single reload path.
-                previewManagerRef.current?.updateVFS(vfs.getStructure(), true);
-                setPreviewReloadNonce((prev) => prev + 1);
-                return;
-            }
-
-            if (
-                previewManagerRef.current &&
-                (previewState.projectType === 'static' || previewState.projectType === 'react')
-            ) {
-                // Regenerate blob URL from updated VFS — the URL change
-                // automatically reloads the iframe, no nonce needed.
-                console.info('[Preview] Dirty file change detected → regenerating preview');
-                previewManagerRef.current.updateVFS(vfs.getStructure());
-            }
-        }, 400);
-
         return () => {
             if (fileChangeReloadTimerRef.current) {
                 clearTimeout(fileChangeReloadTimerRef.current);
                 fileChangeReloadTimerRef.current = null;
             }
         };
-    }, [dirtyFiles, isPreviewOpen, previewState.projectType, previewState.previewUrl, vfs]);
+    }, []);
+
+    // Debounced auto-reload on dirty file changes (same signal path as autosave/DB saves).
+    // NOTE: The cleanup intentionally does NOT cancel the pending timer. When
+    // autosave completes it clears dirtyFiles, which re-runs this effect. If the
+    // cleanup cancelled the timer, the in-flight preview update would be lost and
+    // the preview would show stale content.  Debouncing is handled at the top of
+    // the effect body instead.
+    React.useEffect(() => {
+        if (!isPreviewOpen || !vfs) return;
+        if (!['static', 'react', 'vite'].includes(previewState.projectType)) return;
+        if (dirtyFiles.size === 0) return;
+
+        // Debounce: cancel any previous pending timer before scheduling a new one.
+        if (fileChangeReloadTimerRef.current) {
+            clearTimeout(fileChangeReloadTimerRef.current);
+        }
+
+        fileChangeReloadTimerRef.current = setTimeout(() => {
+            fileChangeReloadTimerRef.current = null;
+
+            if (!previewManagerRef.current) return;
+
+            // For all supported project types (static, react, vite) let the
+            // PreviewManager regenerate/sync via the normal path.  For dev-server
+            // projects this syncs files to WebContainer so Vite HMR picks up the
+            // changes; for static projects a new blob URL is generated.
+            console.info('[Preview] Dirty file change detected → regenerating preview');
+            previewManagerRef.current.updateVFS(vfs.getStructure());
+        }, 400);
+    }, [dirtyFiles, isPreviewOpen, previewState.projectType, vfs]);
 
     /**
      * Handle template selection from AI chat panel

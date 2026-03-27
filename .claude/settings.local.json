@@ -3,7 +3,10 @@
     "allow": [
       "Bash(xargs grep:*)",
       "Bash(ls:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(ls -la src/app/\\\\\\(editor\\\\\\)/components/editor/)",
+      "Bash(wc:*)",
+      "Bash(npx next:*)"
     ]
   }
 }
